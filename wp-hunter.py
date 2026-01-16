@@ -443,6 +443,17 @@ def get_args() -> argparse.Namespace:
 def main() -> None:
     print_banner()
     args = get_args()
+
+    # Override defaults for Abandoned Mode to be effective
+    if args.abandoned:
+        if args.sort == 'updated':
+            args.sort = 'popular'
+            print(f"{Colors.YELLOW}[!] Mode switched to POPULAR to find abandoned plugins effectively.{Colors.RESET}")
+        
+        # Abandoned plugins are rarely quickly accessible in popular lists
+        if args.pages == 5: # If user didn't change default
+            args.pages = 100
+            print(f"{Colors.YELLOW}[!] Increased page scan limit to 100 to dig deeper for abandoned plugins.{Colors.RESET}")
     
     print(f"\n{Colors.BOLD}{Colors.WHITE}=== WP Hunter ==={Colors.RESET}")
     range_str = f"{args.min}-{args.max}" if args.max > 0 else f"{args.min}+"
