@@ -15,7 +15,6 @@ import threading
 from typing import List, Dict, Any, Tuple, Optional, Set
 from dataclasses import dataclass
 import tempfile
-import subprocess
 
 # --- CONSTANTS ---
 CURRENT_WP_VERSION = 6.7
@@ -631,7 +630,7 @@ def process_page_task(
         
         sec_flags, feat_flags = analyze_changelog(p.get('sections', {}))
         tested_ver = p.get('tested', '?')
-        slug = p.get('slug')  # Moved here to fix NameError bug
+        slug = p.get('slug', '')  # Moved here to fix NameError bug
         
         # NEW: Code Analysis Integration
         code_analysis = None
