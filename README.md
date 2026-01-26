@@ -88,6 +88,7 @@ python3 wp-hunter.py
 - `--deep-analysis`: Enable static code analysis (SAST) to find dangerous functions and security flaws (Downloads plugins)
 - `--ajax-scan`: Focus on plugins/themes with AJAX endpoints
 - `--dangerous-functions`: Scan for dangerous PHP functions like `eval()`, `exec()`, etc.
+- `--user-facing`: Focus on plugins that interact directly with end-users (forms, chat, galleries, etc. - high risk)
 - `--auto-download-risky N`: Automatically download and analyze the top N riskiest targets
 
 ### Understanding Page Logic (`--pages`)
@@ -141,6 +142,12 @@ Scan popular themes for security risks:
 python3 wp-hunter.py --themes --pages 2
 ```
 
+**8. User-Facing Plugin Hunt**
+Focus on plugins that interact directly with users (higher risk of XSS/Injection):
+```bash
+python3 wp-hunter.py --user-facing --auto-download-risky 5
+```
+
 ## 🎯 Hunter Strategies (Tips for Researchers)
 
 If you are looking for CVEs or bug bounties, try these specific workflows:
@@ -171,6 +178,7 @@ The score (0-100) is calculated based on the likelihood of **unpatched** or **un
 | **Attack Surface** | Risky Tags | **+30 pts** | Payment, Upload, SQL, Forms have inherently higher complexity/risk. |
 | **Neglect** | Support < 20% | **+15 pts** | If dev ignores users, they likely ignore security reports. |
 | **Code Analysis** | Dangerous Funcs / Unprotected AJAX | **+5 to +25 pts** | Presence of eval/exec or AJAX without nonces increases risk significantly. |
+| **User Facing** | User Interaction | **+5 pts** | Direct user interaction (chat, forms) increases XSS/Injection risk. |
 | **Tech Debt** | Outdated WP | **+15 pts** | Not tested with latest core version. |
 | **Reputation** | Rating < 3.5 | **+10 pts** | Signal of poor user experience/code quality. |
 | **Maintenance** | Update < 14 days | **-5 pts** | **Reward:** Active developer is present and watching. |
@@ -181,10 +189,11 @@ The score (0-100) is calculated based on the likelihood of **unpatched** or **un
 
 The tool identifies plugins in sensitive functional areas where vulnerabilities often carry higher impact:
 - E-commerce and Payment Gateways
-- Form Builders and Input Systems
+- Form Builders and Input Systems (User Facing)
 - Media Uploaders and Managers
 - Authentication and User Management
 - Database and API Connectors
+- Interactive User Features (Chat, Comments, Reviews)
 
 ## Score Interpretation
 

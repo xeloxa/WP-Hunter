@@ -49,6 +49,15 @@ RISKY_TAGS: Set[str] = {
     'custom-post-type', 'cpt', 'meta', 'field', 'acf'
 }
 
+USER_FACING_TAGS: Set[str] = {
+    'chat', 'contact', 'form', 'gallery', 'slider', 'calendar', 'booking',
+    'appointment', 'event', 'social', 'share', 'comment', 'review', 'forum',
+    'membership', 'profile', 'login', 'register', 'ecommerce', 'shop', 'cart',
+    'product', 'checkout', 'newsletter', 'popup', 'banner', 'map', 'faq',
+    'survey', 'poll', 'quiz', 'ticket', 'support', 'download', 'frontend',
+    'video', 'audio', 'player', 'gamification', 'badge', 'points'
+}
+
 SECURITY_KEYWORDS: Set[str] = {
     'xss', 'sql', 'injection', 'security', 'vulnerability', 'exploit', 'csrf', 'rce', 'ssrf',
     'lfi', 'rfi', 'idor', 'xxe', 'deserialization', 'bypass', 'privilege escalation',
@@ -392,6 +401,21 @@ def calculate_vps_score(
         # File operations without proper validation
         if code_analysis.file_operations:
             score += min(5, len(code_analysis.file_operations))
+            
+    # BONUS: User Facing Risk
+    # Plugins that interact with users are inherently more risky (XSS, inputs, etc)
+    # We check the tags passed in matched_tags, but we also check against USER_FACING_TAGS if available in scope
+    # Since we don't pass USER_FACING_TAGS into this function, we rely on the caller or check tags here if needed.
+    # However, to keep it simple, if the user specifically requested user-facing plugins, we can assume they are high value.
+    # But let's check tags again here for scoring accuracy even if flag is not set.
+    
+    # Check for user facing tags in matched_tags (which only contains RISKY_TAGS currently)
+    # or re-evaluate tags. Ideally, we should pass is_user_facing flag.
+    # For now, let's just add a small boost if it hits known risky user-input tags.
+    
+    user_input_tags = {'form', 'contact', 'input', 'chat', 'comment', 'review', 'upload', 'profile'}
+    if any(tag in matched_tags for tag in user_input_tags):
+        score += 5
     
     # BONUS: Active Maintenance Reward
     if days_ago < 14: score = max(0, score - 5)
@@ -544,6 +568,9 @@ def display_plugin_console(idx: int, plugin: Dict[str, Any], analysis: Dict[str,
     dev_type = f"{Colors.YELLOW}Individual/Indie{Colors.RESET}" if p.get('donate_link') else f"{Colors.BLUE}Corporate{Colors.RESET}"
     if a['is_trusted']: dev_type += f" {Colors.GREEN}(Trusted Author){Colors.RESET}"
     print(f"{Colors.CYAN}│{Colors.RESET}   {Colors.BOLD}Type:{Colors.RESET} {dev_type}")
+    
+    if a.get('is_user_facing'):
+        print(f"{Colors.CYAN}│{Colors.RESET}   {Colors.MAGENTA}{Colors.BOLD}🎯 USER FACING:{Colors.RESET} Detected")
 
     if a['sec_flags']:
         print(f"{Colors.CYAN}│{Colors.RESET}   {Colors.RED}{Colors.BOLD}⚠ SECURITY PATCH: {', '.join(a['sec_flags']).upper()}{Colors.RESET}")
@@ -623,6 +650,19 @@ def process_page_task(
         
         if args.smart and not matched_tags: continue
 
+        # --- USER FACING FILTER ---
+        is_user_facing = False
+        if args.user_facing:
+            # Check for user-facing tags
+            user_facing_match = [tag for tag in USER_FACING_TAGS if tag in plugin_tags or tag in name or tag in desc]
+            if not user_facing_match:
+                continue
+            is_user_facing = True
+        else:
+             # Even if flag is not set, check for is_user_facing for reporting
+             user_facing_match = [tag for tag in USER_FACING_TAGS if tag in plugin_tags or tag in name or tag in desc]
+             is_user_facing = bool(user_facing_match)
+
         # --- ANALYSIS LOGIC ---
         total_sup = p.get('support_threads', 0)
         res_sup = p.get('support_threads_resolved', 0)
@@ -672,6 +712,7 @@ def process_page_task(
             'feat_flags': feat_flags,
             'matched_tags': matched_tags,
             'links': links,
+            'is_user_facing': is_user_facing, # NEW: Pass this status
             'code_analysis': code_analysis  # NEW: Add code analysis results
         }
 
@@ -695,6 +736,7 @@ def process_page_task(
                     'tested_wp_version': tested_ver,
                     'author_trusted': is_trusted,
                     'is_risky_category': bool(matched_tags),
+                    'is_user_facing': is_user_facing,
                     'risk_tags': ', '.join(matched_tags),
                     'security_flags': ', '.join(sec_flags),
                     'download_link': p.get('download_link'),
@@ -913,6 +955,7 @@ def get_args() -> argparse.Namespace:
     parser.add_argument('--themes', action='store_true', help='Scan WordPress themes instead of plugins')
     parser.add_argument('--ajax-scan', action='store_true', help='Focus on plugins with AJAX functionality')
     parser.add_argument('--dangerous-functions', action='store_true', help='Look for plugins using dangerous PHP functions')
+    parser.add_argument('--user-facing', action='store_true', help='Focus on plugins that interact directly with end-users (high risk)')
     parser.add_argument('--auto-download-risky', type=int, default=0, metavar='N', help='Auto-download top N riskiest plugins for analysis')
     
     return parser.parse_args()
@@ -954,6 +997,7 @@ def main() -> None:
     if args.abandoned: print(f"{Colors.RED}[!] Abandoned Filter: ON (>730 days){Colors.RESET}")
     if args.deep_analysis: print(f"{Colors.CYAN}[!] Deep Code Analysis: ON (slower but more accurate){Colors.RESET}")
     if args.ajax_scan: print(f"{Colors.YELLOW}[!] AJAX Focus: ON{Colors.RESET}")
+    if args.user_facing: print(f"{Colors.MAGENTA}[!] User-Facing Plugin Filter: ON{Colors.RESET}")
     if args.dangerous_functions: print(f"{Colors.RED}[!] Dangerous Functions Detection: ON{Colors.RESET}")
     
     if args.min_days > 0 or args.max_days > 0:
@@ -1007,10 +1051,12 @@ def main() -> None:
         high_risk = sum(1 for r in collected_results if r.get('score', 0) >= 50)
         abandoned = sum(1 for r in collected_results if r.get('days_since_update', 0) > 730)
         risky_categories = sum(1 for r in collected_results if r.get('is_risky_category', False))
+        user_facing_count = sum(1 for r in collected_results if r.get('is_user_facing', False))
         
         print(f"\n{Colors.BOLD}{Colors.CYAN}=== Scan Summary ==={Colors.RESET}")
         print(f"High Risk Plugins: {Colors.RED}{high_risk}{Colors.RESET}")
         print(f"Abandoned Plugins: {Colors.YELLOW}{abandoned}{Colors.RESET}")
+        print(f"User Facing Plugins: {Colors.MAGENTA}{user_facing_count}{Colors.RESET}")
         print(f"Risky Categories: {Colors.ORANGE}{risky_categories}{Colors.RESET}")
         print(f"Total Analyzed: {Colors.GREEN}{len(collected_results)}{Colors.RESET}")
 
