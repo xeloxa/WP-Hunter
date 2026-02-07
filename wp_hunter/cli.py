@@ -81,6 +81,65 @@ def get_args() -> argparse.Namespace:
     parser.add_argument('--port', type=int, default=8080,
                         help='Port for web dashboard (default: 8080)')
     
+    # Database sync options
+    parser.add_argument('--sync-db', action='store_true',
+                        help='Sync plugin metadata from WordPress.org API to local SQLite database')
+    parser.add_argument('--sync-pages', type=int, default=100,
+                        help='Number of pages to sync (100 plugins per page, default: 100)')
+    parser.add_argument('--sync-workers', type=int, default=10,
+                        help='Number of parallel workers for sync (default: 10)')
+    parser.add_argument('--sync-type', type=str, default='updated',
+                        choices=['updated', 'new', 'popular'],
+                        help='Browse type for sync (default: updated)')
+    parser.add_argument('--sync-all', action='store_true',
+                        help='Sync entire WordPress plugin catalog (~60k plugins, uses all browse types)')
+    parser.add_argument('--incremental', action='store_true',
+                        help='Only sync plugins updated since last sync')
+    
+    # Database query options
+    parser.add_argument('--query-db', action='store_true',
+                        help='Query plugins from local database instead of API')
+    parser.add_argument('--db-stats', action='store_true',
+                        help='Show database statistics')
+    parser.add_argument('--search', type=str, default=None,
+                        help='Search term for database query')
+    parser.add_argument('--tags', type=str, default=None,
+                        help='Comma-separated tags to filter (e.g., "form,payment")')
+    parser.add_argument('--min-rating', type=int, default=0,
+                        help='Minimum plugin rating (0-100)')
+    parser.add_argument('--requires-php', type=str, default=None,
+                        help='Filter by PHP version requirement (e.g., "7.4")')
+    parser.add_argument('--tested-wp', type=str, default=None,
+                        help='Filter by tested WordPress version (e.g., "6.0")')
+    parser.add_argument('--author', type=str, default=None,
+                        help='Filter by author name')
+    parser.add_argument('--sort-by', type=str, default='active_installs',
+                        choices=['active_installs', 'rating', 'last_updated', 'downloaded'],
+                        help='Sort results by field (default: active_installs)')
+    parser.add_argument('--sort-order', type=str, default='desc',
+                        choices=['asc', 'desc'],
+                        help='Sort order (default: desc)')
+    
+    # Export options
+    parser.add_argument('--export', type=str, default=None, metavar='FILE',
+                        help='Export query results to file (CSV or JSON based on extension)')
+    
+    # SVN download options
+    parser.add_argument('--svn-download', type=int, default=0, metavar='N',
+                        help='Download top N plugins from database via SVN')
+    parser.add_argument('--svn-workers', type=int, default=5,
+                        help='Number of parallel SVN download workers (default: 5)')
+    parser.add_argument('--svn-output', type=str, default='./Plugins_SVN',
+                        help='Output directory for SVN downloads (default: ./Plugins_SVN)')
+    
+    # Semgrep integration
+    parser.add_argument('--semgrep-scan', action='store_true',
+                        help='Run Semgrep scan on downloaded plugins')
+    parser.add_argument('--semgrep-rules', type=str, default=None,
+                        help='Path to custom Semgrep rules (default: built-in PHP security rules)')
+    parser.add_argument('--semgrep-output', type=str, default='./semgrep_results',
+                        help='Output directory for Semgrep results (default: ./semgrep_results)')
+    
     return parser.parse_args()
 
 
@@ -247,6 +306,207 @@ def run_plugin_scan(args: argparse.Namespace) -> None:
         print_summary(summary)
 
 
+def run_db_sync(args: argparse.Namespace) -> None:
+    """Sync plugin metadata from WordPress.org API to local database."""
+    from wp_hunter.syncers.plugin_syncer import PluginSyncer, SyncConfig
+    from wp_hunter.database.plugin_metadata import PluginMetadataRepository
+    
+    # Check for incremental sync
+    if args.incremental:
+        repo = PluginMetadataRepository()
+        last_sync = repo.get_last_sync_time()
+        if last_sync:
+            print(f"{Colors.CYAN}[*] Incremental sync mode - last sync: {last_sync}{Colors.RESET}")
+        else:
+            print(f"{Colors.YELLOW}[!] No previous sync found. Running full sync.{Colors.RESET}")
+    
+    # Sync-all mode: sync all browse types for full coverage
+    if args.sync_all:
+        print(f"\n{Colors.BOLD}{Colors.CYAN}=== FULL CATALOG SYNC MODE ==={Colors.RESET}")
+        print(f"  This will sync approximately 60,000+ plugins from WordPress.org")
+        print(f"  Estimated time: 30-60 minutes depending on connection\n")
+        
+        browse_types = ['updated', 'popular', 'new']
+        total_synced = 0
+        
+        for browse_type in browse_types:
+            print(f"\n{Colors.BOLD}[*] Syncing '{browse_type}' browse type...{Colors.RESET}")
+            
+            sync_config = SyncConfig(
+                pages=args.sync_pages or 600,  # 600 pages = ~60k plugins
+                browse_type=browse_type,
+                workers=args.sync_workers
+            )
+            
+            syncer = PluginSyncer(config=sync_config)
+            progress = syncer.sync(verbose=True)
+            total_synced += progress.plugins_synced
+            
+            if progress.error:
+                print(f"{Colors.RED}[!] Error syncing {browse_type}: {progress.error}{Colors.RESET}")
+        
+        print(f"\n{Colors.GREEN}[✓] Full catalog sync complete! Total synced: {total_synced:,} plugins{Colors.RESET}")
+        return
+    
+    # Regular sync
+    sync_config = SyncConfig(
+        pages=args.sync_pages,
+        browse_type=args.sync_type,
+        workers=args.sync_workers
+    )
+    
+    syncer = PluginSyncer(config=sync_config)
+    progress = syncer.sync(verbose=True)
+    
+    if progress.error:
+        print(f"{Colors.RED}[!] Sync failed: {progress.error}{Colors.RESET}")
+
+
+def run_db_stats(args: argparse.Namespace) -> None:
+    """Show database statistics."""
+    from wp_hunter.database.plugin_metadata import PluginMetadataRepository
+    
+    repo = PluginMetadataRepository()
+    stats = repo.get_stats()
+    
+    print(f"\n{Colors.CYAN}{'='*50}{Colors.RESET}")
+    print(f"{Colors.BOLD}📊 Database Statistics{Colors.RESET}")
+    print(f"{Colors.CYAN}{'='*50}{Colors.RESET}")
+    print(f"  📦 Total records: {stats['total_records']:,}")
+    print(f"  🔌 Unique plugins: {stats['unique_plugins']:,}")
+    print(f"  ⭐ Popular (10k+): {stats['popular_10k']:,}")
+    print(f"  🌟 Very Popular (100k+): {stats['popular_100k']:,}")
+    print(f"  🕐 Last sync: {stats['last_sync'] or 'Never'}")
+    print(f"{Colors.CYAN}{'='*50}{Colors.RESET}\n")
+
+
+def run_db_query(args: argparse.Namespace) -> None:
+    """Query plugins from local database with advanced filters."""
+    from wp_hunter.database.plugin_metadata import PluginMetadataRepository
+    from wp_hunter.downloaders.svn_downloader import SVNDownloader
+    import json
+    import csv
+    from pathlib import Path
+    
+    repo = PluginMetadataRepository()
+    
+    # Parse tags if provided
+    tags = args.tags.split(',') if args.tags else None
+    
+    plugins = repo.query_plugins(
+        min_installs=args.min,
+        max_installs=args.max if args.max > 0 else 0,
+        min_rating=getattr(args, 'min_rating', 0),
+        tags=tags,
+        search=args.search,
+        author=getattr(args, 'author', None),
+        requires_php=getattr(args, 'requires_php', None),
+        tested_wp=getattr(args, 'tested_wp', None),
+        sort_by=getattr(args, 'sort_by', 'active_installs'),
+        sort_order=getattr(args, 'sort_order', 'desc'),
+        limit=args.limit if args.limit > 0 else 100
+    )
+    
+    if not plugins:
+        print(f"{Colors.YELLOW}[!] No plugins found matching your criteria.{Colors.RESET}")
+        print(f"{Colors.GRAY}    Try running --sync-db first to populate the database.{Colors.RESET}")
+        return
+    
+    # Export to file if requested
+    export_path = getattr(args, 'export', None)
+    if export_path:
+        export_file = Path(export_path)
+        export_data = [{
+            'slug': p.get('slug'),
+            'name': p.get('name'),
+            'version': p.get('version'),
+            'active_installs': p.get('active_installs'),
+            'rating': p.get('rating'),
+            'last_updated': p.get('last_updated'),
+            'author': p.get('author'),
+            'requires_php': p.get('requires_php'),
+            'tested': p.get('tested'),
+            'download_link': p.get('download_link')
+        } for p in plugins]
+        
+        if export_file.suffix.lower() == '.json':
+            with open(export_file, 'w') as f:
+                json.dump(export_data, f, indent=2)
+        else:  # Default to CSV
+            if not export_file.suffix:
+                export_file = export_file.with_suffix('.csv')
+            with open(export_file, 'w', newline='') as f:
+                writer = csv.DictWriter(f, fieldnames=export_data[0].keys() if export_data else [])
+                writer.writeheader()
+                writer.writerows(export_data)
+        
+        print(f"{Colors.GREEN}[✓] Exported {len(plugins)} plugins to {export_file}{Colors.RESET}")
+    
+    print(f"\n{Colors.CYAN}{'='*80}{Colors.RESET}")
+    print(f"{Colors.BOLD}📦 Found {len(plugins)} plugins in database{Colors.RESET}")
+    print(f"{Colors.CYAN}{'='*80}{Colors.RESET}\n")
+    
+    # Display results in table format
+    print(f"{'#':<4} {'Slug':<35} {'Installs':<12} {'Rating':<8} {'Updated':<12}")
+    print("-" * 80)
+    
+    for i, plugin in enumerate(plugins, 1):
+        slug = plugin.get('slug', '')[:34]
+        installs = plugin.get('active_installs', 0)
+        rating = plugin.get('rating', 0)
+        updated = plugin.get('last_updated', '')[:10]
+        
+        # Color based on installs
+        if installs >= 100000:
+            color = Colors.GREEN
+        elif installs >= 10000:
+            color = Colors.YELLOW
+        else:
+            color = Colors.WHITE
+        
+        print(f"{i:<4} {color}{slug:<35}{Colors.RESET} {installs:<12,} {rating:<8} {updated:<12}")
+    
+    print(f"\n{Colors.GRAY}Use --svn-download N to download top N plugins{Colors.RESET}")
+    
+    # SVN download if requested
+    downloaded_dirs = []
+    if args.svn_download > 0:
+        print(f"\n{Colors.BOLD}Starting SVN download...{Colors.RESET}")
+        slugs = [p['slug'] for p in plugins[:args.svn_download]]
+        
+        downloader = SVNDownloader(
+            output_dir=args.svn_output,
+            workers=args.svn_workers
+        )
+        results = downloader.download_many(slugs, verbose=True)
+        
+        # Collect downloaded directories for Semgrep scan
+        for result in results:
+            if result.success:
+                plugin_dir = Path(args.svn_output) / result.slug
+                if plugin_dir.exists():
+                    downloaded_dirs.append(str(plugin_dir))
+    
+    # Semgrep scan if requested
+    if getattr(args, 'semgrep_scan', False) and downloaded_dirs:
+        print(f"\n{Colors.BOLD}Starting Semgrep security scan...{Colors.RESET}")
+        
+        try:
+            from wp_hunter.scanners.semgrep_scanner import SemgrepScanner
+            
+            scanner = SemgrepScanner(
+                rules_path=getattr(args, 'semgrep_rules', None),
+                output_dir=getattr(args, 'semgrep_output', './semgrep_results'),
+                workers=3
+            )
+            scanner.scan_plugins(downloaded_dirs, verbose=True)
+            
+        except ImportError:
+            print(f"{Colors.YELLOW}[!] Semgrep scanner module not loaded.{Colors.RESET}")
+        except Exception as e:
+            print(f"{Colors.RED}[!] Semgrep scan error: {e}{Colors.RESET}")
+
+
 def run_gui(port: int = 8080) -> None:
     """Start the web dashboard."""
     try:
@@ -283,6 +543,21 @@ def main() -> None:
         # GUI mode
         if args.gui:
             run_gui(args.port)
+            return
+        
+        # Database sync mode
+        if args.sync_db:
+            run_db_sync(args)
+            return
+        
+        # Database stats
+        if args.db_stats:
+            run_db_stats(args)
+            return
+        
+        # Database query mode
+        if args.query_db:
+            run_db_query(args)
             return
         
         # Theme scanning mode
