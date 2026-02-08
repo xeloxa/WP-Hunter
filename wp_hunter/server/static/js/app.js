@@ -164,7 +164,7 @@ class WPHunterDashboard {
 
         const scoreClass = result.score >= 80 ? 'critical' : (result.score >= 50 ? 'high' : 'low');
         const riskTags = (result.risk_tags || []).slice(0, 3).map(t =>
-            `<span class="risk-tag">${t}</span>`
+            `<span class="risk-tag">${this.escapeHtml(t)}</span>`
         ).join('');
 
         row.innerHTML = `
@@ -257,7 +257,7 @@ class WPHunterDashboard {
             item.innerHTML = `
                 <div class="date">${date}</div>
                 <div class="count">${session.total_found} plugins found</div>
-                <span class="status-tag ${statusClass}">${session.status.toUpperCase()}</span>
+                <span class="status-tag ${statusClass}">${this.escapeHtml(session.status).toUpperCase()}</span>
             `;
 
             item.addEventListener('click', () => this.loadSession(session.id));
