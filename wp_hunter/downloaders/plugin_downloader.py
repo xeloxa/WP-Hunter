@@ -52,7 +52,12 @@ class PluginDownloader:
             if verbose:
                 print(f"{Colors.CYAN}[📦] Extracting {slug}...{Colors.RESET}")
             with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-                zip_ref.extractall(extract_path)
+                # Zip Slip mitigation
+                for member in zip_ref.infolist():
+                    member_path = os.path.join(str(extract_path), member.filename)
+                    if not os.path.abspath(member_path).startswith(os.path.abspath(str(extract_path))):
+                        raise Exception(f'Zip Slip attempt detected: {member.filename}')
+                    zip_ref.extract(member, extract_path)
             
             # Clean up zip
             zip_path.unlink()
