@@ -4,6 +4,9 @@ WP-Hunter Plugin Downloader
 Download and extract plugins for analysis.
 """
 
+import socket
+import ipaddress
+from urllib.parse import urlparse
 import os
 import zipfile
 import shutil
@@ -22,6 +25,28 @@ class PluginDownloader:
         self.plugins_dir = self.base_dir / "Plugins"
         self.plugins_dir.mkdir(exist_ok=True)
     
+    
+    def _validate_url(self, url: str) -> None:
+        "Validate URL to prevent SSRF attacks."
+        parsed = urlparse(url)
+        if parsed.scheme not in ('http', 'https'):
+            raise ValueError(f"Invalid URL scheme: {parsed.scheme}")
+        
+        hostname = parsed.hostname
+        if not hostname:
+            raise ValueError("Invalid URL: Missing hostname")
+            
+        try:
+            # Resolve IP to check against internal ranges
+            ip_str = socket.gethostbyname(hostname)
+            ip_obj = ipaddress.ip_address(ip_str)
+            
+            if ip_obj.is_loopback or ip_obj.is_private:
+                 raise ValueError(f"SSRF Protection: Access to internal IP {ip_str} is blocked")
+                 
+        except socket.gaierror:
+            raise ValueError(f"Could not resolve hostname: {hostname}")
+
     def download_and_extract(
         self, 
         download_url: str, 
@@ -41,6 +66,9 @@ class PluginDownloader:
             # Download
             if verbose:
                 print(f"{Colors.CYAN}[⬇] Downloading {slug}...{Colors.RESET}")
+            
+            self._validate_url(download_url)
+            
             response = session.get(download_url, stream=True, timeout=60)
             response.raise_for_status()
             
