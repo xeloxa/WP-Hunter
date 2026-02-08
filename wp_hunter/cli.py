@@ -531,7 +531,7 @@ def run_gui(port: int = 8080) -> None:
     
     # Run server
     app = create_app()
-    uvicorn.run(app, host="0.0.0.0", port=port, log_level="warning")
+    uvicorn.run(app, host="127.0.0.1", port=port, log_level="warning")
 
 
 def main() -> None:
