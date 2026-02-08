@@ -3,204 +3,635 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>WP-Hunter | Dashboard</title>
+    <title>WP-Hunter | Reconnaissance Interface</title>
+    <link rel="icon" type="image/png" href="assets/banner.png">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Space+Grotesk:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/static/css/dashboard.css">
+    <link rel="stylesheet" href="assets/css/style.css?v=2">
+    <style>
+        .nav-menu {
+            margin-top: 30px;
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+        .nav-item {
+            background: none;
+            border: none;
+            color: #666;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 10px 15px;
+            cursor: pointer;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 13px;
+            text-align: left;
+            border-radius: 4px;
+            transition: all 0.2s;
+        }
+        .nav-item:hover {
+            color: var(--text-main);
+            background: rgba(255, 255, 255, 0.03);
+        }
+        .nav-item.active {
+            color: var(--accent-primary);
+            background: rgba(0, 255, 157, 0.1);
+            font-weight: 700;
+        }
+        .history-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-family: var(--font-mono);
+            font-size: 12px;
+        }
+        .history-table th {
+            text-align: left;
+            padding: 12px;
+            color: var(--text-muted);
+            border-bottom: 1px solid var(--border-color);
+            font-weight: normal;
+        }
+        .history-table td {
+            padding: 12px;
+            border-bottom: 1px solid #1a1a1a;
+            color: var(--text-main);
+        }
+        .status-badge {
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 10px;
+            text-transform: uppercase;
+        }
+        .status-badge.completed { background: rgba(0, 255, 157, 0.1); color: var(--accent-primary); }
+        .status-badge.running { background: rgba(0, 243, 255, 0.1); color: var(--accent-blue); }
+        .status-badge.failed { background: rgba(255, 0, 85, 0.1); color: var(--accent-secondary); }
+        
+        .panel-actions {
+            margin-left: auto;
+            display: flex;
+            gap: 10px;
+        }
+
+        .details-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        .detail-item label {
+            display: block;
+            font-size: 10px;
+            color: var(--text-muted);
+            margin-bottom: 5px;
+            font-family: var(--font-mono);
+        }
+        .detail-item span {
+            font-size: 14px;
+            color: var(--text-main);
+        }
+        .risk-high { color: var(--accent-secondary); }
+        .risk-medium { color: #ffbd2e; }
+        .risk-low { color: var(--accent-blue); }
+        
+        /* Modal Styles */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.8);
+            backdrop-filter: blur(5px);
+            z-index: 1000;
+            display: none; /* Hidden by default */
+            align-items: center;
+            justify-content: center;
+        }
+        .modal-overlay.active {
+            display: flex;
+        }
+        .modal {
+            background: #0f0f11;
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            width: 90%;
+            max-width: 800px;
+            max-height: 90vh;
+            overflow-y: auto;
+            box-shadow: 0 20px 50px rgba(0,0,0,0.5);
+            display: flex;
+            flex-direction: column;
+        }
+        .modal-header {
+            padding: 20px;
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: #141416;
+            position: sticky;
+            top: 0;
+        }
+        .modal-header h3 {
+            font-family: var(--font-mono);
+            font-size: 16px;
+            color: var(--text-main);
+            margin: 0;
+        }
+        .modal-close {
+            background: none;
+            border: none;
+            color: var(--text-muted);
+            cursor: pointer;
+            font-size: 20px;
+        }
+        .modal-close:hover {
+            color: #fff;
+        }
+        .modal-body {
+            padding: 30px;
+        }
+        .tag {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 10px;
+            font-family: var(--font-mono);
+            background: #222;
+            color: #ccc;
+            margin-right: 5px;
+            margin-bottom: 5px;
+        }
+        .tag.risk { background: rgba(255, 0, 85, 0.1); color: var(--accent-secondary); border: 1px solid rgba(255, 0, 85, 0.2); }
+        .tag.safe { background: rgba(0, 255, 157, 0.1); color: var(--accent-primary); border: 1px solid rgba(0, 255, 157, 0.2); }
+        .tag.warn { background: rgba(255, 189, 46, 0.1); color: #ffbd2e; border: 1px solid rgba(255, 189, 46, 0.2); }
+        
+        .section-title {
+            font-family: var(--font-mono);
+            font-size: 12px;
+            color: var(--text-muted);
+            margin-bottom: 15px;
+            margin-top: 25px;
+            border-bottom: 1px solid #222;
+            padding-bottom: 5px;
+        }
+        .link-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+            gap: 10px;
+        }
+        .ext-link {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px;
+            background: #1a1a1a;
+            border: 1px solid #333;
+            border-radius: 4px;
+            text-decoration: none;
+            color: var(--text-main);
+            font-size: 12px;
+            transition: all 0.2s;
+        }
+        .ext-link:hover {
+            border-color: var(--accent-primary);
+            background: rgba(0, 255, 157, 0.05);
+        }
+        .code-block {
+            background: #050505;
+            padding: 15px;
+            border-radius: 4px;
+            font-family: var(--font-mono);
+            font-size: 11px;
+            color: #ccc;
+            max-height: 200px;
+            overflow-y: auto;
+            border: 1px solid #222;
+        }
+        .code-item {
+            display: block;
+            margin-bottom: 4px;
+            padding-bottom: 4px;
+            border-bottom: 1px dashed #222;
+        }
+        .code-item:last-child { border-bottom: none; }
+    </style>
 </head>
 <body>
     <div class="scan-line"></div>
     <div class="noise"></div>
 
-    <div class="app">
-        <!-- Sidebar -->
-        <aside class="sidebar">
+    <div class="layout">
+        <!-- Sidebar / Header -->
+        <header class="sidebar">
             <div class="brand">
-                <div class="logo-mark">
-                    <svg width="40" height="40" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
-                        <path d="M20 5L35 12.5V27.5L20 35L5 27.5V12.5L20 5Z" stroke="#00FF9D" stroke-width="2" fill="rgba(0, 255, 157, 0.1)"/>
-                        <circle cx="20" cy="20" r="4" fill="#00FF9D"/>
-                        <path d="M20 10V16M20 24V30M10 20H16M24 20H30" stroke="#00FF9D" stroke-width="2"/>
+                <div class="logo-mark" style="width: 100%; display: flex; justify-content: flex-start; margin-bottom: 10px;">
+                    <img src="assets/banner.png" alt="WP-Hunter" style="width: 160px; height: auto; object-fit: contain;">
+                </div>
+                <div class="badge" id="server-address" style="margin-top: 10px; cursor: pointer;" title="Click to copy address">...</div>
+            </div>
+            
+            <p class="mission-brief">
+                Advanced WordPress reconnaissance and static analysis tool. 
+                Configure your scan parameters below to generate the execution sequence.
+            </p>
+
+            <div class="status-panel">
+                <div class="status-row">
+                    <span class="label">SYSTEM</span>
+                    <span class="value online">ONLINE</span>
+                </div>
+                <div class="status-row">
+                    <span class="label">TARGET</span>
+                    <span class="value">WORDPRESS.ORG</span>
+                </div>
+                <div class="status-row">
+                    <span class="label">MODE</span>
+                    <span class="value mode-display">RECON</span>
+                </div>
+            </div>
+
+            <!-- Navigation -->
+            <div class="nav-menu">
+                <button class="nav-item active" id="nav-scan" onclick="switchTab('scan')">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <circle cx="12" cy="12" r="10"></circle>
+                        <line x1="12" y1="8" x2="12" y2="16"></line>
+                        <line x1="8" y1="12" x2="16" y2="12"></line>
                     </svg>
-                </div>
-                <h1>WP-HUNTER</h1>
-                <div class="badge">DASHBOARD</div>
+                    <span>NEW SCAN</span>
+                </button>
+                <button class="nav-item" id="nav-history" onclick="switchTab('history')">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <circle cx="12" cy="12" r="10"></circle>
+                        <polyline points="12 6 12 12 16 14"></polyline>
+                    </svg>
+                    <span>HISTORY</span>
+                </button>
+                <button class="nav-item" id="nav-favorites" onclick="switchTab('favorites')">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>
+                    <span>FAVORITES</span>
+                </button>
             </div>
 
-            <div class="status-panel" id="scanStatus">
-                <div class="status-row">
-                    <span class="label">STATUS</span>
-                    <span class="value" id="statusValue">IDLE</span>
+            <div class="links">
+                <a href="https://github.com/xeloxa/wp-hunter" target="_blank" class="link-item">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg>
+                    Repository
+                </a>
+            </div>
+        </header>
+
+        <!-- Main Configuration Area -->
+        <main class="config-area" id="scan-view">
+            
+            <form id="configForm" onsubmit="return false;">
+                
+                <!-- Section 1: Scope -->
+                <section class="panel">
+                    <div class="panel-header">
+                        <span class="panel-icon">01</span>
+                        <h2>Scope Definition</h2>
+                    </div>
+                    <div class="panel-body">
+                        <div class="control-group">
+                            <label>Installations Range <span class="info-icon" data-tooltip="Filter targets based on minimum and maximum active installation counts."></span></label>
+                            <div class="range-inputs">
+                                <div class="input-wrapper">
+                                    <span class="input-label">MIN</span>
+                                    <input type="number" name="min_installs" value="1000" min="0" placeholder="0">
+                                </div>
+                                <div class="separator">TO</div>
+                                <div class="input-wrapper">
+                                    <span class="input-label">MAX</span>
+                                    <input type="number" name="max_installs" value="0" min="0" placeholder="Unlimited">
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="control-group">
+                            <label>Update Timeline (Days) <span class="info-icon" data-tooltip="Find targets last updated within a specific window (e.g., between 30 and 365 days ago)."></span></label>
+                            <div class="range-inputs">
+                                <div class="input-wrapper">
+                                    <span class="input-label">MIN</span>
+                                    <input type="number" name="min_days" value="0" min="0" placeholder="0">
+                                </div>
+                                <div class="separator">TO</div>
+                                <div class="input-wrapper">
+                                    <span class="input-label">MAX</span>
+                                    <input type="number" name="max_days" value="0" min="0" placeholder="Unlimited">
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="control-group">
+                            <label>Search Depth <span class="info-icon" data-tooltip="Configure how many pages of results to scan and the maximum limit."></span></label>
+                            <div class="range-inputs">
+                                <div class="input-wrapper">
+                                    <span class="input-label">PAGES</span>
+                                    <input type="number" name="pages" value="5" min="1" max="50">
+                                </div>
+                                <div class="input-wrapper">
+                                    <span class="input-label">LIMIT</span>
+                                    <input type="number" name="limit" value="0" min="0" placeholder="No Limit">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Section 2: Filters -->
+                <section class="panel">
+                    <div class="panel-header">
+                        <span class="panel-icon">02</span>
+                        <h2>Target Filters</h2>
+                    </div>
+                    <div class="panel-body grid-2">
+                        <div class="control-group">
+                            <label>Sorting Strategy <span class="info-icon" data-tooltip="Order results by popularity, update date, or newest additions."></span></label>
+                            <div class="select-wrapper">
+                                <select name="sort">
+                                    <option value="updated">Last Updated</option>
+                                    <option value="active_installs">Popularity</option>
+                                    <option value="new">Newest Added</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div class="control-group">
+                            <label>Target Type <span class="info-icon" data-tooltip="Switch between scanning plugins (default) or themes."></span></label>
+                            <label class="toggle-card">
+                                <input type="checkbox" name="themes">
+                                <div class="toggle-content">
+                                    <span class="toggle-title">Scan Themes</span>
+                                    <span class="toggle-desc">Switch to theme repository</span>
+                                </div>
+                                <div class="toggle-switch"></div>
+                            </label>
+                        </div>
+
+                        <div class="control-group">
+                            <label>Smart Filtering <span class="info-icon" data-tooltip="Use AI heuristics to identify potentially vulnerable targets."></span></label>
+                            <label class="toggle-card">
+                                <input type="checkbox" name="smart">
+                                <div class="toggle-content">
+                                    <span class="toggle-title">Smart Mode</span>
+                                    <span class="toggle-desc">Heuristic analysis enabled</span>
+                                </div>
+                                <div class="toggle-switch"></div>
+                            </label>
+                        </div>
+
+                        <div class="control-group">
+                            <label>Abandoned Software <span class="info-icon" data-tooltip="Specifically target plugins/themes that haven't been updated in over 2 years."></span></label>
+                            <label class="toggle-card danger">
+                                <input type="checkbox" name="abandoned">
+                                <div class="toggle-content">
+                                    <span class="toggle-title">Abandoned Only</span>
+                                    <span class="toggle-desc">High vulnerability probability</span>
+                                </div>
+                                <div class="toggle-switch"></div>
+                            </label>
+                        </div>
+
+                        <div class="control-group">
+                            <label>User Interaction <span class="info-icon" data-tooltip="Filter for plugins that have frontend user input forms."></span></label>
+                            <label class="toggle-card">
+                                <input type="checkbox" name="user_facing">
+                                <div class="toggle-content">
+                                    <span class="toggle-title">User Facing</span>
+                                    <span class="toggle-desc">Has input forms/shortcodes</span>
+                                </div>
+                                <div class="toggle-switch"></div>
+                            </label>
+                        </div>
+
+                        <div class="control-group">
+                            <label>Deep Analysis <span class="info-icon" data-tooltip="Perform deeper static analysis on code structure (slower)."></span></label>
+                            <label class="toggle-card danger">
+                                <input type="checkbox" name="deep_analysis">
+                                <div class="toggle-content">
+                                    <span class="toggle-title">Deep Analysis</span>
+                                    <span class="toggle-desc"> intensive code scanning</span>
+                                </div>
+                                <div class="toggle-switch"></div>
+                            </label>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Section 3: Output -->
+                <section class="panel">
+                    <div class="panel-header">
+                        <span class="panel-icon">03</span>
+                        <h2>Output & Artifacts</h2>
+                    </div>
+                    <div class="panel-body grid-2">
+                        <div class="control-group">
+                            <label>Report File <span class="info-icon" data-tooltip="Save the scan results to a local file (e.g. 'report.json')."></span></label>
+                            <div class="input-wrapper">
+                                <input type="text" name="output" placeholder="e.g. results.json">
+                            </div>
+                        </div>
+
+                        <div class="control-group">
+                            <label>Report Format <span class="info-icon" data-tooltip="Select the format for the output file."></span></label>
+                            <div class="select-wrapper">
+                                <select name="format">
+                                    <option value="json" selected>JSON</option>
+                                    <option value="csv">CSV</option>
+                                    <option value="html">HTML Report</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div class="control-group">
+                            <label>Auto Download Strategy <span class="info-icon" data-tooltip="Choose which plugins to automatically download based on score and risk."></span></label>
+                            <div class="range-inputs">
+                                <div class="select-wrapper" style="flex: 2;">
+                                    <select name="download_mode">
+                                        <option value="none">No Download</option>
+                                        <option value="all">Top Scored (All)</option>
+                                        <option value="risky">High Risk Only</option>
+                                    </select>
+                                </div>
+                                <div class="input-wrapper" style="flex: 1;">
+                                    <input type="number" name="download_qty" placeholder="Qty" min="0">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+            </form>
+        </main>
+
+        <!-- History View -->
+        <main class="config-area" id="history-view" style="display: none;">
+            <div class="panel">
+                <div class="panel-header">
+                    <span class="panel-icon">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+                    </span>
+                    <h2>Scan History</h2>
+                    <div class="panel-actions">
+                        <button class="action-btn" onclick="refreshHistory()">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6M1 20v-6h6"></path><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
+                            REFRESH
+                        </button>
+                    </div>
                 </div>
-                <div class="status-row">
-                    <span class="label">PROGRESS</span>
-                    <span class="value" id="progressValue">0%</span>
-                </div>
-                <div class="status-row">
-                    <span class="label">FOUND</span>
-                    <span class="value" id="foundValue">0</span>
+                <div class="panel-body">
+                    <div class="history-table-container">
+                        <table class="history-table">
+                            <thead>
+                                <tr>
+                                    <th>ID</th>
+                                    <th>STATUS</th>
+                                    <th>PLUGINS FOUND</th>
+                                    <th>HIGH RISK</th>
+                                    <th>DATE</th>
+                                    <th>ACTIONS</th>
+                                </tr>
+                            </thead>
+                            <tbody id="history-list">
+                                <!-- History items will be injected here -->
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
             </div>
+        </main>
 
-            <div class="history-section">
-                <h3>Scan History</h3>
-                <div class="history-list" id="historyList">
-                    <!-- Populated by JS -->
+        <!-- Details View -->
+        <main class="config-area" id="scan-details-view" style="display: none;">
+            <div class="panel">
+                <div class="panel-header">
+                    <span class="panel-icon">D</span>
+                    <h2 id="details-title">Scan Details</h2>
+                    <div class="panel-actions">
+                        <button class="action-btn" onclick="switchTab('history')">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>
+                            BACK
+                        </button>
+                    </div>
+                </div>
+                <div class="panel-body">
+                    <div class="details-grid" id="details-summary">
+                        <!-- Summary injected here -->
+                    </div>
+                    
+                    <h3 style="font-family: var(--font-mono); font-size: 14px; margin-bottom: 15px; color: var(--text-muted);">RESULTS</h3>
+                    <div class="history-table-container">
+                        <table class="history-table">
+                            <thead>
+                                <tr>
+                                    <th>SLUG</th>
+                                    <th>VERSION</th>
+                                    <th>SCORE</th>
+                                    <th>UPDATED</th>
+                                    <th>INSTALLS</th>
+                                    <th>ACTIONS</th>
+                                </tr>
+                            </thead>
+                            <tbody id="details-list">
+                                <!-- Results injected here -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </main>
+
+        <!-- Favorites View -->
+        <main class="config-area" id="favorites-view" style="display: none;">
+            <div class="panel">
+                <div class="panel-header">
+                    <span class="panel-icon">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>
+                    </span>
+                    <h2>Favorites</h2>
+                    <div class="panel-actions">
+                        <button class="action-btn" onclick="loadFavorites()">REFRESH</button>
+                    </div>
+                </div>
+                <div class="panel-body">
+                    <div class="history-table-container">
+                        <table class="history-table">
+                            <thead>
+                                <tr>
+                                    <th>SLUG</th>
+                                    <th>VERSION</th>
+                                    <th>SCORE</th>
+                                    <th>ACTIONS</th>
+                                </tr>
+                            </thead>
+                            <tbody id="favorites-list"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </main>
+
+        <!-- Output Console -->
+        <aside class="console-area">
+            <div class="console-sticky">
+                <div class="console-header">
+                    <h3>EXECUTION SEQUENCE</h3>
+                    <div class="console-actions">
+                        <button id="runBtn" class="action-btn run-btn" onclick="runScan()">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <polygon points="5 3 19 12 5 21 5 3"></polygon>
+                            </svg>
+                            <span>RUN SCAN</span>
+                        </button>
+                    </div>
+                </div>
+                
+                <div class="terminal-window">
+                    <div class="terminal-bar">
+                        <span class="dot red"></span>
+                        <span class="dot yellow"></span>
+                        <span class="dot green"></span>
+                    </div>
+                    <div class="terminal-content" id="terminal-content">
+                        <div class="line">
+                            <span class="prompt">$</span>
+                            <span class="cmd-text">Ready to scan...</span>
+                            <span class="cursor">_</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="context-info" id="contextInfo">
+                    <div class="info-item">
+                        <span class="info-label">STATUS</span>
+                        <span class="info-value" id="scan-status">IDLE</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">FOUND</span>
+                        <span class="info-value" id="scan-found">0</span>
+                    </div>
                 </div>
             </div>
         </aside>
-
-        <!-- Main Content -->
-        <main class="main-content">
-            <!-- Configuration Panel -->
-            <section class="config-panel" id="configPanel">
-                <div class="panel-header">
-                    <h2>🎯 New Scan</h2>
-                    <button class="btn btn-primary" id="startScanBtn">
-                        <span class="btn-icon">▶</span> Start Scan
-                    </button>
-                </div>
-
-                <div class="config-grid">
-                    <!-- Scope -->
-                    <div class="config-section">
-                        <h4>Scope</h4>
-                        <div class="control-group">
-                            <label>Installations Range</label>
-                            <div class="inline-inputs">
-                                <input type="number" id="minInstalls" value="1000" placeholder="Min">
-                                <span>to</span>
-                                <input type="number" id="maxInstalls" value="0" placeholder="Max (0=∞)">
-                            </div>
-                        </div>
-                        <div class="control-group">
-                            <label>Update Age (Days)</label>
-                            <div class="inline-inputs">
-                                <input type="number" id="minDays" value="0" placeholder="Min">
-                                <span>to</span>
-                                <input type="number" id="maxDays" value="0" placeholder="Max (0=∞)">
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Strategy -->
-                    <div class="config-section">
-                        <h4>Strategy</h4>
-                        <div class="control-group">
-                            <label>Sort By</label>
-                            <select id="sortBy">
-                                <option value="updated">Recently Updated</option>
-                                <option value="new">Newest</option>
-                                <option value="popular">Popular</option>
-                            </select>
-                        </div>
-                        <div class="control-group">
-                            <label>Pages to Scan</label>
-                            <input type="range" id="pages" min="1" max="50" value="5" oninput="this.nextElementSibling.value = this.value">
-                            <output>5</output>
-                        </div>
-                        <div class="control-group">
-                            <label>Result Limit (0=∞)</label>
-                            <input type="number" id="limit" value="0">
-                        </div>
-                    </div>
-
-                    <!-- Filters -->
-                    <div class="config-section">
-                        <h4>Filters</h4>
-                        <div class="toggle-group">
-                            <label class="toggle">
-                                <input type="checkbox" id="smartFilter">
-                                <span class="toggle-slider"></span>
-                                <span class="toggle-label">Smart Filter</span>
-                            </label>
-                            <label class="toggle">
-                                <input type="checkbox" id="abandonedFilter">
-                                <span class="toggle-slider"></span>
-                                <span class="toggle-label">Abandoned Only</span>
-                            </label>
-                            <label class="toggle">
-                                <input type="checkbox" id="userFacingFilter">
-                                <span class="toggle-slider"></span>
-                                <span class="toggle-label">User Facing</span>
-                            </label>
-                            <label class="toggle danger">
-                                <input type="checkbox" id="deepAnalysis">
-                                <span class="toggle-slider"></span>
-                                <span class="toggle-label">Deep Analysis</span>
-                            </label>
-                        </div>
-                    </div>
-                </div>
-            </section>
-
-            <!-- Results Panel -->
-            <section class="results-panel" id="resultsPanel">
-                <div class="panel-header">
-                    <h2>📊 Results</h2>
-                    <div class="results-actions">
-                        <select id="sortResults">
-                            <option value="score-desc">Score (High → Low)</option>
-                            <option value="score-asc">Score (Low → High)</option>
-                            <option value="installations-desc">Installs (High → Low)</option>
-                            <option value="days-asc">Recently Updated</option>
-                        </select>
-                        <button class="btn btn-secondary" id="exportBtn">Export</button>
-                    </div>
-                </div>
-
-                <!-- Progress Bar -->
-                <div class="progress-bar-container" id="progressContainer" style="display: none;">
-                    <div class="progress-bar" id="progressBar"></div>
-                    <span class="progress-text" id="progressText">Scanning...</span>
-                </div>
-
-                <!-- Stats -->
-                <div class="stats-row" id="statsRow">
-                    <div class="stat-card">
-                        <div class="stat-value" id="totalFound">0</div>
-                        <div class="stat-label">Total Found</div>
-                    </div>
-                    <div class="stat-card high">
-                        <div class="stat-value" id="highRisk">0</div>
-                        <div class="stat-label">High Risk</div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="stat-value" id="abandoned">0</div>
-                        <div class="stat-label">Abandoned</div>
-                    </div>
-                </div>
-
-                <!-- Data Grid -->
-                <div class="data-grid" id="dataGrid">
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>Plugin</th>
-                                <th>Score</th>
-                                <th>Installs</th>
-                                <th>Updated</th>
-                                <th>Risk Tags</th>
-                                <th>Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody id="resultsBody">
-                            <!-- Populated by JS -->
-                        </tbody>
-                    </table>
-                </div>
-
-                <!-- Empty State -->
-                <div class="empty-state" id="emptyState">
-                    <div class="empty-icon">🔍</div>
-                    <h3>No Results Yet</h3>
-                    <p>Configure your scan parameters and click "Start Scan" to begin reconnaissance.</p>
-                </div>
-            </section>
-        </main>
     </div>
 
-    <script src="/static/js/app.js"></script>
+    <!-- Details Modal -->
+    <div class="modal-overlay" id="plugin-modal">
+        <div class="modal">
+            <div class="modal-header">
+                <h3 id="modal-title">Plugin Details</h3>
+                <button class="modal-close" onclick="closeModal()">×</button>
+            </div>
+            <div class="modal-body" id="modal-content">
+                <!-- Content injected via JS -->
+            </div>
+        </div>
+    </div>
+
+    <script src="assets/js/app.js?v=2"></script>
 </body>
 </html>

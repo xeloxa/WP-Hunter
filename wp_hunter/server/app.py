@@ -37,6 +37,10 @@ class ScanRequest(BaseModel):
     min_days: int = 0
     max_days: int = 0
     deep_analysis: bool = False
+    download: int = 0
+    auto_download_risky: int = 0
+    output: Optional[str] = None
+    format: str = "json"
 
 
 class DownloadRequest(BaseModel):
@@ -92,6 +96,10 @@ def create_app() -> FastAPI:
     if static_dir.exists():
         app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
     
+    assets_dir = static_dir / "assets"
+    if assets_dir.exists():
+        app.mount("/assets", StaticFiles(directory=str(assets_dir)), name="assets")
+    
     @app.get("/", response_class=HTMLResponse)
     async def root():
         """Serve the main dashboard."""
@@ -129,6 +137,10 @@ def create_app() -> FastAPI:
             min_days=request.min_days,
             max_days=request.max_days,
             deep_analysis=request.deep_analysis,
+            download=request.download,
+            auto_download_risky=request.auto_download_risky,
+            output=request.output,
+            format=request.format
         )
         
         # Create session in database
@@ -230,6 +242,20 @@ def create_app() -> FastAPI:
         except WebSocketDisconnect:
             manager.disconnect(websocket, session_id)
     
+    @app.get("/api/favorites")
+    async def list_favorites():
+        return {"favorites": repo.get_favorites()}
+
+    @app.post("/api/favorites")
+    async def add_favorite(plugin: dict):
+        success = repo.add_favorite(plugin)
+        return {"success": success}
+
+    @app.delete("/api/favorites/{slug}")
+    async def remove_favorite(slug: str):
+        success = repo.remove_favorite(slug)
+        return {"success": success}
+
     async def run_scan_task(session_id: int, config: ScanConfig, repo: ScanRepository):
         """Background task to run a scan."""
         try:
@@ -315,6 +341,24 @@ def create_app() -> FastAPI:
                 total_found=found_count,
                 high_risk_count=high_risk_count
             )
+            
+            # Check for identical previous scan
+            prev_session_id = repo.get_latest_session_by_config(config.to_dict(), session_id)
+            if prev_session_id:
+                current_slugs = set(repo.get_result_slugs(session_id))
+                prev_slugs = set(repo.get_result_slugs(prev_session_id))
+                
+                if current_slugs == prev_slugs:
+                    # Identical results and config. Merge.
+                    repo.delete_session(session_id)
+                    repo.touch_session(prev_session_id)
+                    
+                    await manager.send_to_session(session_id, {
+                        "type": "deduplicated",
+                        "original_session_id": prev_session_id,
+                        "message": "Results identical to previous scan. Merged."
+                    })
+                    return
             
             # Send completion message
             await manager.send_to_session(session_id, {

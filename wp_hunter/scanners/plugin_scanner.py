@@ -1,3 +1,4 @@
+from wp_hunter.logger import setup_logger
 """
 WP-Hunter Plugin Scanner
 
@@ -16,6 +17,8 @@ from wp_hunter.config import (
 from wp_hunter.models import ScanConfig, PluginResult, CodeAnalysisResult
 from wp_hunter.analyzers.code_analyzer import CodeAnalyzer
 from wp_hunter.analyzers.vps_scorer import calculate_vps_score
+
+logger = setup_logger(__name__)
 
 
 # Thread-safe lock for console output
@@ -110,19 +113,16 @@ def fetch_plugins(page: int, browse_type: str, max_retries: int = 3) -> List[Dic
             
             elif response.status_code == 429:
                 wait_time = 5 * (attempt + 1)
-                with print_lock:
-                    print(f"{Colors.YELLOW}[!] Rate limited, waiting {wait_time}s...{Colors.RESET}")
+                logger.error(f"Rate limited, waiting {wait_time}s...")
                 time.sleep(wait_time)
                 continue
                 
         except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as e:
-            with print_lock:
-                print(f"{Colors.RED}[!] Network error ({e}), retrying...{Colors.RESET}")
+            logger.error(f"Network error ({e}), retrying...")
             time.sleep(2)
             continue
         except Exception as e:
-            with print_lock:
-                print(f"{Colors.RED}[!] Unexpected API Error: {e}{Colors.RESET}")
+            logger.error(f"Unexpected API Error: {e}")
             break
             
     return []

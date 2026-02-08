@@ -19,6 +19,51 @@ class ScanRepository:
     def __init__(self, db_path: Optional[Path] = None):
         self.db_path = db_path
         init_db(db_path)
+        
+        # Migration: Add is_duplicate column if missing
+        try:
+            with get_db(self.db_path) as conn:
+                cursor = conn.cursor()
+                try:
+                    cursor.execute("SELECT is_duplicate FROM scan_results LIMIT 1")
+                except Exception:
+                    cursor.execute("ALTER TABLE scan_results ADD COLUMN is_duplicate INTEGER DEFAULT 0")
+                    conn.commit()
+            
+            # Migration: Add link columns if missing
+            with get_db(self.db_path) as conn:
+                cursor = conn.cursor()
+                link_columns = ["cve_search_link", "wpscan_link", "patchstack_link", "wordfence_link", "google_dork_link", "trac_link"]
+                for col in link_columns:
+                    try:
+                        cursor.execute(f"SELECT {col} FROM scan_results LIMIT 1")
+                    except Exception:
+                        cursor.execute(f"ALTER TABLE scan_results ADD COLUMN {col} TEXT")
+                        conn.commit()
+
+            # Migration: Add missing columns to favorite_plugins
+            with get_db(self.db_path) as conn:
+                cursor = conn.cursor()
+                fav_cols = {
+                    "author_trusted": "INTEGER DEFAULT 0",
+                    "is_risky_category": "INTEGER DEFAULT 0",
+                    "is_user_facing": "INTEGER DEFAULT 0",
+                    "risk_tags": "TEXT",
+                    "security_flags": "TEXT",
+                    "feature_flags": "TEXT",
+                    "code_analysis_json": "TEXT"
+                }
+                for col, type_def in fav_cols.items():
+                    try:
+                        cursor.execute(f"SELECT {col} FROM favorite_plugins LIMIT 1")
+                    except Exception:
+                        try:
+                            cursor.execute(f"ALTER TABLE favorite_plugins ADD COLUMN {col} {type_def}")
+                            conn.commit()
+                        except Exception: pass
+
+        except Exception as e:
+            print(f"Database migration warning: {e}")
     
     def create_session(self, config: ScanConfig) -> int:
         """Create a new scan session and return its ID."""
@@ -72,6 +117,16 @@ class ScanRepository:
         with get_db(self.db_path) as conn:
             cursor = conn.cursor()
             
+            # Check for duplicates in OTHER sessions
+            cursor.execute("""
+                SELECT 1 FROM scan_results 
+                WHERE slug = ? AND session_id != ? 
+                LIMIT 1
+            """, (result.slug, session_id))
+            
+            if cursor.fetchone():
+                result.is_duplicate = True
+            
             code_analysis_json = None
             if result.code_analysis:
                 code_analysis_json = json.dumps({
@@ -87,9 +142,9 @@ class ScanRepository:
                 INSERT INTO scan_results (
                     session_id, slug, name, version, score, installations,
                     days_since_update, tested_wp_version, author_trusted,
-                    is_risky_category, is_user_facing, risk_tags, security_flags,
-                    feature_flags, download_link, code_analysis_json
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    is_risky_category, is_user_facing, is_duplicate, risk_tags, security_flags,
+                    feature_flags, download_link, cve_search_link, wpscan_link, patchstack_link, wordfence_link, google_dork_link, trac_link, code_analysis_json
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 session_id,
                 result.slug,
@@ -102,10 +157,17 @@ class ScanRepository:
                 1 if result.author_trusted else 0,
                 1 if result.is_risky_category else 0,
                 1 if result.is_user_facing else 0,
+                1 if result.is_duplicate else 0,
                 ','.join(result.risk_tags),
                 ','.join(result.security_flags),
                 ','.join(result.feature_flags),
                 result.download_link,
+                result.cve_search_link,
+                result.wpscan_link,
+                result.patchstack_link,
+                result.wordfence_link,
+                result.google_dork_link,
+                result.trac_link,
                 code_analysis_json
             ))
             conn.commit()
@@ -196,10 +258,17 @@ class ScanRepository:
                     "author_trusted": bool(row["author_trusted"]),
                     "is_risky_category": bool(row["is_risky_category"]),
                     "is_user_facing": bool(row["is_user_facing"]),
+                    "is_duplicate": bool(row["is_duplicate"]) if "is_duplicate" in row.keys() else False,
                     "risk_tags": row["risk_tags"].split(',') if row["risk_tags"] else [],
                     "security_flags": row["security_flags"].split(',') if row["security_flags"] else [],
                     "feature_flags": row["feature_flags"].split(',') if row["feature_flags"] else [],
                     "download_link": row["download_link"],
+                    "cve_search_link": row["cve_search_link"],
+                    "wpscan_link": row["wpscan_link"],
+                    "patchstack_link": row["patchstack_link"],
+                    "wordfence_link": row["wordfence_link"],
+                    "google_dork_link": row["google_dork_link"],
+                    "trac_link": row["trac_link"],
                 }
                 
                 if row["code_analysis_json"]:
@@ -222,3 +291,119 @@ class ScanRepository:
             
             conn.commit()
             return cursor.rowcount > 0
+
+    def get_latest_session_by_config(self, config_dict: Dict[str, Any], exclude_id: int) -> Optional[int]:
+        """Find the most recent completed session with identical configuration."""
+        config_str = json.dumps(config_dict, sort_keys=True)
+        
+        with get_db(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT id, config_json FROM scan_sessions 
+                WHERE status = 'completed' AND id != ?
+                ORDER BY id DESC LIMIT 20
+            """, (exclude_id,))
+            
+            for row in cursor.fetchall():
+                try:
+                    row_config = json.loads(row["config_json"])
+                    if json.dumps(row_config, sort_keys=True) == config_str:
+                        return row["id"]
+                except Exception:
+                    continue
+        return None
+
+    def get_result_slugs(self, session_id: int) -> List[str]:
+        """Get list of slugs for a session."""
+        with get_db(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT slug FROM scan_results WHERE session_id = ?", (session_id,))
+            return [row["slug"] for row in cursor.fetchall()]
+
+    def touch_session(self, session_id: int) -> None:
+        """Update session timestamp to now."""
+        with get_db(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute("UPDATE scan_sessions SET created_at = CURRENT_TIMESTAMP WHERE id = ?", (session_id,))
+            conn.commit()
+
+    def add_favorite(self, result_dict: Dict[str, Any]) -> bool:
+        """Add a plugin to favorites."""
+        with get_db(self.db_path) as conn:
+            cursor = conn.cursor()
+            
+            # Handle list fields for storage
+            r_tags = ','.join(result_dict.get('risk_tags', [])) if isinstance(result_dict.get('risk_tags'), list) else result_dict.get('risk_tags', '')
+            s_flags = ','.join(result_dict.get('security_flags', [])) if isinstance(result_dict.get('security_flags'), list) else result_dict.get('security_flags', '')
+            f_flags = ','.join(result_dict.get('feature_flags', [])) if isinstance(result_dict.get('feature_flags'), list) else result_dict.get('feature_flags', '')
+            
+            # Handle code analysis
+            ca_json = None
+            if result_dict.get('code_analysis'):
+                ca_json = json.dumps(result_dict.get('code_analysis'))
+            
+            try:
+                cursor.execute("""
+                    INSERT INTO favorite_plugins (
+                        slug, name, version, score, installations, days_since_update,
+                        tested_wp_version, download_link, cve_search_link, wpscan_link,
+                        patchstack_link, wordfence_link, google_dork_link, trac_link,
+                        author_trusted, is_risky_category, is_user_facing,
+                        risk_tags, security_flags, feature_flags, code_analysis_json
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    result_dict.get('slug'), result_dict.get('name'), result_dict.get('version'), result_dict.get('score'),
+                    result_dict.get('installations'), result_dict.get('days_since_update'), result_dict.get('tested_wp_version'),
+                    result_dict.get('download_link'), result_dict.get('cve_search_link'), result_dict.get('wpscan_link'),
+                    result_dict.get('patchstack_link'), result_dict.get('wordfence_link'), result_dict.get('google_dork_link'),
+                    result_dict.get('trac_link'),
+                    1 if result_dict.get('author_trusted') else 0,
+                    1 if result_dict.get('is_risky_category') else 0,
+                    1 if result_dict.get('is_user_facing') else 0,
+                    r_tags, s_flags, f_flags, ca_json
+                ))
+                conn.commit()
+                return True
+            except Exception as e:
+                print(f"Error adding favorite: {e}")
+                return False
+
+    def remove_favorite(self, slug: str) -> bool:
+        """Remove a plugin from favorites."""
+        with get_db(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM favorite_plugins WHERE slug = ?", (slug,))
+            conn.commit()
+            return cursor.rowcount > 0
+
+    def get_favorites(self) -> List[Dict[str, Any]]:
+        """Get all favorite plugins."""
+        with get_db(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM favorite_plugins ORDER BY created_at DESC")
+            results = []
+            for row in cursor.fetchall():
+                d = dict(row)
+                # Parse bools
+                d['author_trusted'] = bool(d.get('author_trusted', 0))
+                d['is_risky_category'] = bool(d.get('is_risky_category', 0))
+                d['is_user_facing'] = bool(d.get('is_user_facing', 0))
+                
+                # Parse lists
+                d['risk_tags'] = d['risk_tags'].split(',') if d.get('risk_tags') else []
+                d['security_flags'] = d['security_flags'].split(',') if d.get('security_flags') else []
+                d['feature_flags'] = d['feature_flags'].split(',') if d.get('feature_flags') else []
+                
+                # Parse JSON
+                if d.get('code_analysis_json'):
+                    d['code_analysis'] = json.loads(d['code_analysis_json'])
+                
+                results.append(d)
+            return results
+    
+    def is_favorite(self, slug: str) -> bool:
+        """Check if a plugin is favorited."""
+        with get_db(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT 1 FROM favorite_plugins WHERE slug = ?", (slug,))
+            return cursor.fetchone() is not None

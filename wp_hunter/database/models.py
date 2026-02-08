@@ -64,10 +64,17 @@ def init_db(db_path: Optional[Path] = None) -> None:
             author_trusted INTEGER DEFAULT 0,
             is_risky_category INTEGER DEFAULT 0,
             is_user_facing INTEGER DEFAULT 0,
+            is_duplicate INTEGER DEFAULT 0,
             risk_tags TEXT,
             security_flags TEXT,
             feature_flags TEXT,
             download_link TEXT,
+            cve_search_link TEXT,
+            wpscan_link TEXT,
+            patchstack_link TEXT,
+            wordfence_link TEXT,
+            google_dork_link TEXT,
+            trac_link TEXT,
             code_analysis_json TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (session_id) REFERENCES scan_sessions(id)
@@ -83,6 +90,28 @@ def init_db(db_path: Optional[Path] = None) -> None:
     cursor.execute("""
         CREATE INDEX IF NOT EXISTS idx_results_score 
         ON scan_results(score DESC)
+    """)
+    
+        # Create favorite_plugins table
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS favorite_plugins (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            slug TEXT NOT NULL UNIQUE,
+            name TEXT,
+            version TEXT,
+            score INTEGER DEFAULT 0,
+            installations INTEGER DEFAULT 0,
+            days_since_update INTEGER DEFAULT 0,
+            tested_wp_version TEXT,
+            download_link TEXT,
+            cve_search_link TEXT,
+            wpscan_link TEXT,
+            patchstack_link TEXT,
+            wordfence_link TEXT,
+            google_dork_link TEXT,
+            trac_link TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
     """)
     
     conn.commit()

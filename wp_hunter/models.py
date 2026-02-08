@@ -162,6 +162,7 @@ class PluginResult:
     author_trusted: bool = False
     is_risky_category: bool = False
     is_user_facing: bool = False
+    is_duplicate: bool = False
     
     # Analysis data
     risk_tags: List[str] = field(default_factory=list)
@@ -191,6 +192,7 @@ class PluginResult:
             "author_trusted": self.author_trusted,
             "is_risky_category": self.is_risky_category,
             "is_user_facing": self.is_user_facing,
+            "is_duplicate": self.is_duplicate,
             "risk_tags": self.risk_tags,
             "security_flags": self.security_flags,
             "feature_flags": self.feature_flags,
