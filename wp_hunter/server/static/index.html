@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WP-Hunter | Dashboard</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Space+Grotesk:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/dashboard.css">
+</head>
+<body>
+    <div class="scan-line"></div>
+    <div class="noise"></div>
+
+    <div class="app">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <div class="brand">
+                <div class="logo-mark">
+                    <svg width="40" height="40" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M20 5L35 12.5V27.5L20 35L5 27.5V12.5L20 5Z" stroke="#00FF9D" stroke-width="2" fill="rgba(0, 255, 157, 0.1)"/>
+                        <circle cx="20" cy="20" r="4" fill="#00FF9D"/>
+                        <path d="M20 10V16M20 24V30M10 20H16M24 20H30" stroke="#00FF9D" stroke-width="2"/>
+                    </svg>
+                </div>
+                <h1>WP-HUNTER</h1>
+                <div class="badge">DASHBOARD</div>
+            </div>
+
+            <div class="status-panel" id="scanStatus">
+                <div class="status-row">
+                    <span class="label">STATUS</span>
+                    <span class="value" id="statusValue">IDLE</span>
+                </div>
+                <div class="status-row">
+                    <span class="label">PROGRESS</span>
+                    <span class="value" id="progressValue">0%</span>
+                </div>
+                <div class="status-row">
+                    <span class="label">FOUND</span>
+                    <span class="value" id="foundValue">0</span>
+                </div>
+            </div>
+
+            <div class="history-section">
+                <h3>Scan History</h3>
+                <div class="history-list" id="historyList">
+                    <!-- Populated by JS -->
+                </div>
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Configuration Panel -->
+            <section class="config-panel" id="configPanel">
+                <div class="panel-header">
+                    <h2>🎯 New Scan</h2>
+                    <button class="btn btn-primary" id="startScanBtn">
+                        <span class="btn-icon">▶</span> Start Scan
+                    </button>
+                </div>
+
+                <div class="config-grid">
+                    <!-- Scope -->
+                    <div class="config-section">
+                        <h4>Scope</h4>
+                        <div class="control-group">
+                            <label>Installations Range</label>
+                            <div class="inline-inputs">
+                                <input type="number" id="minInstalls" value="1000" placeholder="Min">
+                                <span>to</span>
+                                <input type="number" id="maxInstalls" value="0" placeholder="Max (0=∞)">
+                            </div>
+                        </div>
+                        <div class="control-group">
+                            <label>Update Age (Days)</label>
+                            <div class="inline-inputs">
+                                <input type="number" id="minDays" value="0" placeholder="Min">
+                                <span>to</span>
+                                <input type="number" id="maxDays" value="0" placeholder="Max (0=∞)">
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Strategy -->
+                    <div class="config-section">
+                        <h4>Strategy</h4>
+                        <div class="control-group">
+                            <label>Sort By</label>
+                            <select id="sortBy">
+                                <option value="updated">Recently Updated</option>
+                                <option value="new">Newest</option>
+                                <option value="popular">Popular</option>
+                            </select>
+                        </div>
+                        <div class="control-group">
+                            <label>Pages to Scan</label>
+                            <input type="range" id="pages" min="1" max="50" value="5" oninput="this.nextElementSibling.value = this.value">
+                            <output>5</output>
+                        </div>
+                        <div class="control-group">
+                            <label>Result Limit (0=∞)</label>
+                            <input type="number" id="limit" value="0">
+                        </div>
+                    </div>
+
+                    <!-- Filters -->
+                    <div class="config-section">
+                        <h4>Filters</h4>
+                        <div class="toggle-group">
+                            <label class="toggle">
+                                <input type="checkbox" id="smartFilter">
+                                <span class="toggle-slider"></span>
+                                <span class="toggle-label">Smart Filter</span>
+                            </label>
+                            <label class="toggle">
+                                <input type="checkbox" id="abandonedFilter">
+                                <span class="toggle-slider"></span>
+                                <span class="toggle-label">Abandoned Only</span>
+                            </label>
+                            <label class="toggle">
+                                <input type="checkbox" id="userFacingFilter">
+                                <span class="toggle-slider"></span>
+                                <span class="toggle-label">User Facing</span>
+                            </label>
+                            <label class="toggle danger">
+                                <input type="checkbox" id="deepAnalysis">
+                                <span class="toggle-slider"></span>
+                                <span class="toggle-label">Deep Analysis</span>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Results Panel -->
+            <section class="results-panel" id="resultsPanel">
+                <div class="panel-header">
+                    <h2>📊 Results</h2>
+                    <div class="results-actions">
+                        <select id="sortResults">
+                            <option value="score-desc">Score (High → Low)</option>
+                            <option value="score-asc">Score (Low → High)</option>
+                            <option value="installations-desc">Installs (High → Low)</option>
+                            <option value="days-asc">Recently Updated</option>
+                        </select>
+                        <button class="btn btn-secondary" id="exportBtn">Export</button>
+                    </div>
+                </div>
+
+                <!-- Progress Bar -->
+                <div class="progress-bar-container" id="progressContainer" style="display: none;">
+                    <div class="progress-bar" id="progressBar"></div>
+                    <span class="progress-text" id="progressText">Scanning...</span>
+                </div>
+
+                <!-- Stats -->
+                <div class="stats-row" id="statsRow">
+                    <div class="stat-card">
+                        <div class="stat-value" id="totalFound">0</div>
+                        <div class="stat-label">Total Found</div>
+                    </div>
+                    <div class="stat-card high">
+                        <div class="stat-value" id="highRisk">0</div>
+                        <div class="stat-label">High Risk</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value" id="abandoned">0</div>
+                        <div class="stat-label">Abandoned</div>
+                    </div>
+                </div>
+
+                <!-- Data Grid -->
+                <div class="data-grid" id="dataGrid">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Plugin</th>
+                                <th>Score</th>
+                                <th>Installs</th>
+                                <th>Updated</th>
+                                <th>Risk Tags</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="resultsBody">
+                            <!-- Populated by JS -->
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Empty State -->
+                <div class="empty-state" id="emptyState">
+                    <div class="empty-icon">🔍</div>
+                    <h3>No Results Yet</h3>
+                    <p>Configure your scan parameters and click "Start Scan" to begin reconnaissance.</p>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <script src="/static/js/app.js"></script>
+</body>
+</html>
