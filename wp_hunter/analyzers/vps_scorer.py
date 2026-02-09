@@ -61,8 +61,14 @@ def calculate_vps_score(
         score += 10  # Unknown compatibility is risky
         
     # 5. REPUTATION (Quality Signal) - Max 10 pts
-    rating = plugin.get('rating', 0) / 20  # Convert 100 scale to 5
-    if rating < 3.5: 
+    # Input validation: Ensure rating is within expected bounds
+    raw_rating = plugin.get('rating', 0)
+    if not isinstance(raw_rating, (int, float)) or raw_rating < 0:
+        raw_rating = 0
+    elif raw_rating > 100:
+        raw_rating = 100
+    rating = raw_rating / 20  # Convert 100 scale to 5
+    if rating < 3.5:
         score += 10
     
     # 6. CODE ANALYSIS BONUS - Max 25 pts

@@ -6,7 +6,7 @@ Download and extract plugins for analysis.
 
 import socket
 import ipaddress
-from urllib.parse import urlparse
+from urllib.parse import urlparse, urljoin
 import os
 import zipfile
 import shutil
@@ -27,23 +27,65 @@ class PluginDownloader:
     
     
     def _validate_url(self, url: str) -> None:
-        "Validate URL to prevent SSRF attacks."
+        """
+        Validate URL to prevent SSRF attacks.
+
+        Blocks:
+        - Non-HTTP(S) schemes
+        - Loopback addresses (127.0.0.0/8, ::1)
+        - Private IP ranges (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16)
+        - Link-local addresses (169.254.0.0/16, fe80::/10)
+        - Cloud metadata endpoints (169.254.169.254)
+        - IPv6 localhost
+        """
         parsed = urlparse(url)
         if parsed.scheme not in ('http', 'https'):
             raise ValueError(f"Invalid URL scheme: {parsed.scheme}")
-        
+
         hostname = parsed.hostname
         if not hostname:
             raise ValueError("Invalid URL: Missing hostname")
-            
+
+        # Block common cloud metadata hostnames
+        blocked_hostnames = {
+            'metadata.google.internal',
+            'metadata.goog',
+            '169.254.169.254',
+            'instance-data',
+            'metadata',
+        }
+        if hostname.lower() in blocked_hostnames:
+            raise ValueError(f"SSRF Protection: Access to cloud metadata endpoint is blocked")
+
         try:
             # Resolve IP to check against internal ranges
             ip_str = socket.gethostbyname(hostname)
             ip_obj = ipaddress.ip_address(ip_str)
-            
-            if ip_obj.is_loopback or ip_obj.is_private:
-                 raise ValueError(f"SSRF Protection: Access to internal IP {ip_str} is blocked")
-                 
+
+            # Comprehensive SSRF protection checks
+            if ip_obj.is_loopback:
+                raise ValueError(f"SSRF Protection: Access to loopback address {ip_str} is blocked")
+
+            if ip_obj.is_private:
+                raise ValueError(f"SSRF Protection: Access to private IP {ip_str} is blocked")
+
+            if ip_obj.is_link_local:
+                raise ValueError(f"SSRF Protection: Access to link-local address {ip_str} is blocked")
+
+            if ip_obj.is_reserved:
+                raise ValueError(f"SSRF Protection: Access to reserved IP {ip_str} is blocked")
+
+            if ip_obj.is_multicast:
+                raise ValueError(f"SSRF Protection: Access to multicast address {ip_str} is blocked")
+
+            # Cloud metadata IP check (AWS, GCP, Azure)
+            if str(ip_obj) == "169.254.169.254":
+                raise ValueError("SSRF Protection: Access to cloud metadata endpoint is blocked")
+
+            # IPv6 localhost check
+            if str(ip_obj) == "::1":
+                raise ValueError("SSRF Protection: Access to IPv6 localhost is blocked")
+
         except socket.gaierror:
             raise ValueError(f"Could not resolve hostname: {hostname}")
 
@@ -66,12 +108,31 @@ class PluginDownloader:
             # Download
             if verbose:
                 print(f"{Colors.CYAN}[⬇] Downloading {slug}...{Colors.RESET}")
-            
-            self._validate_url(download_url)
-            
-            response = session.get(download_url, stream=True, timeout=60)
+
+            # Follow redirects manually with validation
+            current_url = download_url
+            response = None
+
+            for _ in range(5):  # Max 5 redirects
+                self._validate_url(current_url)
+
+                response = session.get(current_url, stream=True, timeout=60, allow_redirects=False)
+
+                if response.is_redirect:
+                    location = response.headers['Location']
+                    # Handle relative redirects
+                    if not urlparse(location).netloc:
+                        current_url = urljoin(current_url, location)
+                    else:
+                        current_url = location
+                    continue
+                else:
+                    break
+            else:
+                raise ValueError("Too many redirects")
+
             response.raise_for_status()
-            
+
             with open(zip_path, 'wb') as f:
                 for chunk in response.iter_content(chunk_size=8192):
                     f.write(chunk)

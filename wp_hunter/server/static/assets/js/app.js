@@ -90,10 +90,12 @@ window.switchTab = function(tabId) {
     document.getElementById('favorites-view').style.display = 'none';
     const detailsView = document.getElementById('scan-details-view');
     if (detailsView) detailsView.style.display = 'none';
-    
+    const semgrepView = document.getElementById('semgrep-view');
+    if (semgrepView) semgrepView.style.display = 'none';
+
     // Reset nav active state
     document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
-    
+
     // Show selected view and set active
     if (tabId === 'scan') {
         document.getElementById('scan-view').style.display = 'block';
@@ -106,6 +108,10 @@ window.switchTab = function(tabId) {
         document.getElementById('favorites-view').style.display = 'block';
         document.getElementById('nav-favorites').classList.add('active');
         loadFavorites();
+    } else if (tabId === 'semgrep') {
+        if (semgrepView) semgrepView.style.display = 'block';
+        document.getElementById('nav-semgrep').classList.add('active');
+        loadSemgrepRules();
     } else if (tabId === 'details') {
         if (detailsView) detailsView.style.display = 'block';
     }
@@ -240,24 +246,34 @@ function logTerminal(text, type = 'info') {
     const terminal = document.getElementById('terminal-content');
     const div = document.createElement('div');
     div.className = 'line';
-    
+
     let color = '#ccc';
     if (type === 'error' || type === 'high-risk') color = '#ff5f56';
     if (type === 'success') color = '#27c93f';
     if (type === 'info') color = '#00f3ff';
     if (type === 'warn') color = '#ffbd2e';
-    
-    div.innerHTML = `<span class="prompt">$</span> <span style="color: ${color}">${text}</span>`;
-    
+
+    // XSS Prevention: Use textContent instead of innerHTML for user data
+    const promptSpan = document.createElement('span');
+    promptSpan.className = 'prompt';
+    promptSpan.textContent = '$';
+
+    const textSpan = document.createElement('span');
+    textSpan.style.color = color;
+    textSpan.textContent = ' ' + text;
+
+    div.appendChild(promptSpan);
+    div.appendChild(textSpan);
+
     const existingCursor = terminal.querySelector('.cursor');
     if (existingCursor) existingCursor.remove();
-    
+
     terminal.appendChild(div);
     const cursor = document.createElement('span');
     cursor.className = 'cursor';
     cursor.textContent = '_';
     div.appendChild(cursor);
-    
+
     terminal.scrollTop = terminal.scrollHeight;
 }
 
@@ -276,17 +292,17 @@ window.loadHistory = async function() {
         const sessions = data.sessions.sort((a, b) => new Date(b.created_at || b.start_time) - new Date(a.created_at || a.start_time));
         list.innerHTML = sessions.map(s => `
             <tr>
-                <td>#${s.id}</td>
-                <td><span class="status-badge ${s.status.toLowerCase()}">${s.status}</span></td>
-                <td>${s.total_found}</td>
-                <td>${s.high_risk_count}</td>
-                <td>${new Date(s.created_at || s.start_time).toLocaleString()}</td>
+                <td>#${escapeHtml(String(s.id))}</td>
+                <td><span class="status-badge ${escapeHtml(s.status).toLowerCase()}">${escapeHtml(s.status)}</span></td>
+                <td>${escapeHtml(String(s.total_found))}</td>
+                <td>${escapeHtml(String(s.high_risk_count))}</td>
+                <td>${escapeHtml(new Date(s.created_at || s.start_time).toLocaleString())}</td>
                 <td>
                     <div style="display: flex; gap: 8px;">
-                        <button onclick="viewScan(${s.id})" class="action-btn" title="View Results" style="width: 32px; height: 32px; padding: 0; background: #333; color: white;">
+                        <button onclick="viewScan(${parseInt(s.id)})" class="action-btn" title="View Results" style="width: 32px; height: 32px; padding: 0; background: #333; color: white;">
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
                         </button>
-                        <button onclick="deleteScan(${s.id})" class="action-btn" title="Delete Scan" style="width: 32px; height: 32px; padding: 0; background: rgba(255, 0, 85, 0.1); color: #ff0055; border: 1px solid rgba(255, 0, 85, 0.2);">
+                        <button onclick="deleteScan(${parseInt(s.id)})" class="action-btn" title="Delete Scan" style="width: 32px; height: 32px; padding: 0; background: rgba(255, 0, 85, 0.1); color: #ff0055; border: 1px solid rgba(255, 0, 85, 0.2);">
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
                         </button>
                     </div>
@@ -387,12 +403,12 @@ window.viewScan = async function(id) {
             <div style="margin-top: 15px; padding-top: 15px; border-top: 1px dashed #333; grid-column: 1 / -1;">
                 <label style="display: block; font-size: 10px; color: var(--text-muted); margin-bottom: 8px; font-family: var(--font-mono);">CONFIGURATION</label>
                 <div style="display: flex; flex-wrap: wrap; gap: 8px; font-size: 11px; font-family: var(--font-mono); color: #888;">
-                    <span style="background: #1a1a1a; padding: 4px 8px; border-radius: 2px;">SORT: <span style="color: #ccc">${(config.sort || 'UPDATED').toUpperCase()}</span></span>
-                    <span style="background: #1a1a1a; padding: 4px 8px; border-radius: 2px;">PAGES: <span style="color: #ccc">${config.pages || 5}</span></span>
-                    <span style="background: #1a1a1a; padding: 4px 8px; border-radius: 2px;">LIMIT: <span style="color: #ccc">${config.limit || '∞'}</span></span>
-                    <span style="background: #1a1a1a; padding: 4px 8px; border-radius: 2px;">INSTALLS: <span style="color: #ccc">${config.min_installs || 0} - ${config.max_installs || '∞'}</span></span>
-                    <span style="background: #1a1a1a; padding: 4px 8px; border-radius: 2px;">UPDATED: <span style="color: #ccc">${config.min_days || 0}-${config.max_days || '∞'}d</span></span>
-                    
+                    <span style="background: #1a1a1a; padding: 4px 8px; border-radius: 2px;">SORT: <span style="color: #ccc">${escapeHtml((config.sort || 'UPDATED').toUpperCase())}</span></span>
+                    <span style="background: #1a1a1a; padding: 4px 8px; border-radius: 2px;">PAGES: <span style="color: #ccc">${escapeHtml(config.pages || 5)}</span></span>
+                    <span style="background: #1a1a1a; padding: 4px 8px; border-radius: 2px;">LIMIT: <span style="color: #ccc">${escapeHtml(config.limit || '∞')}</span></span>
+                    <span style="background: #1a1a1a; padding: 4px 8px; border-radius: 2px;">INSTALLS: <span style="color: #ccc">${escapeHtml(config.min_installs || 0)} - ${escapeHtml(config.max_installs || '∞')}</span></span>
+                    <span style="background: #1a1a1a; padding: 4px 8px; border-radius: 2px;">UPDATED: <span style="color: #ccc">${escapeHtml(config.min_days || 0)}-${escapeHtml(config.max_days || '∞')}d</span></span>
+
                     ${config.smart ? '<span style="background: rgba(0, 255, 157, 0.1); color: var(--accent-primary); padding: 4px 8px; border-radius: 2px;">SMART</span>' : ''}
                     ${config.abandoned ? '<span style="background: rgba(255, 0, 85, 0.1); color: var(--accent-secondary); padding: 4px 8px; border-radius: 2px;">ABANDONED</span>' : ''}
                     ${config.user_facing ? '<span style="background: rgba(255, 189, 46, 0.1); color: #ffbd2e; padding: 4px 8px; border-radius: 2px;">USER-FACING</span>' : ''}
@@ -435,7 +451,7 @@ window.viewScan = async function(id) {
             list.innerHTML = '<tr><td colspan="6" style="text-align: center; color: #666;">No results found</td></tr>';
         }
     } catch (error) {
-        summary.innerHTML = `Error: ${error.message}`;
+        summary.innerHTML = `Error: ${escapeHtml(error.message)}`;
     }
 }
 
@@ -494,4 +510,219 @@ window.openPluginModal = function(index) {
 
 window.closeModal = function() {
     document.getElementById('plugin-modal').classList.remove('active');
+}
+
+// ==========================================
+// SEMGREP RULES MANAGEMENT
+// ==========================================
+
+window.loadSemgrepRules = async function() {
+    const statusEl = document.getElementById('semgrep-status');
+    const ruleCountEl = document.getElementById('semgrep-rule-count');
+    const customCountEl = document.getElementById('semgrep-custom-count');
+    const rulesListEl = document.getElementById('semgrep-rules-list');
+
+    if (!statusEl) return;
+
+    statusEl.textContent = 'Loading...';
+    statusEl.style.color = '#ffbd2e';
+
+    try {
+        const response = await fetch('/api/semgrep/rules');
+        const data = await response.json();
+
+        // Update status
+        if (data.installed) {
+            statusEl.textContent = 'INSTALLED';
+            statusEl.style.color = 'var(--accent-primary)';
+        } else {
+            statusEl.textContent = 'NOT INSTALLED';
+            statusEl.style.color = 'var(--accent-secondary)';
+        }
+
+        // Update counts
+        const activeRulesets = (data.rulesets || []).filter(r => r.enabled).length;
+        ruleCountEl.textContent = activeRulesets; // Renamed label to "ACTIVE PACKS" in HTML
+        customCountEl.textContent = data.custom_rules ? data.custom_rules.length : 0;
+
+        // Clean up UI - Remove old registry count if exists
+        const registryCountEl = document.getElementById('semgrep-registry-count');
+        if (registryCountEl && registryCountEl.parentNode) {
+            registryCountEl.parentNode.style.display = 'none';
+        }
+
+        // 1. RENDER RULESETS
+        let html = '';
+
+        if (data.rulesets && data.rulesets.length > 0) {
+            html += `<h3 style="font-family: var(--font-mono); font-size: 12px; color: var(--text-muted); margin-bottom: 15px; border-bottom: 1px solid #222; padding-bottom: 8px; margin-top: 10px;">📦 SECURITY RULESETS</h3>`;
+            html += data.rulesets.map(rs => `
+                <div style="background: ${!rs.enabled ? 'rgba(30, 30, 30, 0.5)' : '#141416'}; border: 1px solid ${!rs.enabled ? '#333' : 'var(--accent-blue)'}; border-radius: 4px; padding: 15px; margin-bottom: 10px; opacity: ${!rs.enabled ? '0.6' : '1'}; transition: all 0.2s;">
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <div style="flex: 1;">
+                            <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 5px;">
+                                <span style="font-family: var(--font-mono); font-size: 14px; color: ${!rs.enabled ? '#888' : '#fff'}; font-weight: 600;">${escapeHtml(rs.name)}</span>
+                                ${!rs.enabled ? '<span class="tag" style="font-size: 9px; background: #333;">DISABLED</span>' : '<span class="tag safe" style="font-size: 9px;">ACTIVE</span>'}
+                            </div>
+                            <div style="font-size: 11px; color: #888;">${escapeHtml(rs.description)}</div>
+                            <a href="${escapeHtml(rs.url)}" target="_blank" style="font-size: 10px; color: var(--accent-blue); text-decoration: none; margin-top: 5px; display: inline-block;">View Details ↗</a>
+                        </div>
+                        <div style="margin-left: 15px;">
+                            <button onclick="toggleRuleset('${escapeHtml(rs.id)}')" class="action-btn" style="width: 40px; height: 32px; padding: 0; background: ${!rs.enabled ? 'rgba(0, 255, 157, 0.1)' : 'rgba(255, 95, 86, 0.1)'}; color: ${!rs.enabled ? 'var(--accent-primary)' : '#ff5f56'}; border: 1px solid ${!rs.enabled ? 'rgba(0, 255, 157, 0.3)' : 'rgba(255, 95, 86, 0.3)'};" title="${!rs.enabled ? 'Enable Ruleset' : 'Disable Ruleset'}">
+                                ${!rs.enabled ? 'ON' : 'OFF'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        // 2. RENDER CUSTOM RULES
+        html += `<h3 style="font-family: var(--font-mono); font-size: 12px; color: var(--text-muted); margin-bottom: 15px; border-bottom: 1px solid #222; padding-bottom: 8px; margin-top: 30px;">✏️ CUSTOM RULES</h3>`;
+
+        const customRules = data.custom_rules || [];
+        if (customRules.length > 0) {
+            html += customRules.map(rule => `
+                <div style="background: ${!rule.enabled ? 'rgba(30, 30, 30, 0.5)' : '#141416'}; border: 1px solid ${!rule.enabled ? '#333' : 'var(--accent-primary)'}; border-radius: 4px; padding: 15px; margin-bottom: 10px; opacity: ${!rule.enabled ? '0.6' : '1'}; transition: all 0.2s;">
+                    <div style="display: flex; justify-content: space-between; align-items: start;">
+                        <div style="flex: 1;">
+                            <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 8px;">
+                                <span style="font-family: var(--font-mono); font-size: 13px; color: ${!rule.enabled ? '#888' : '#fff'}; font-weight: 600; text-decoration: ${!rule.enabled ? 'line-through' : 'none'};">${escapeHtml(rule.id)}</span>
+                                <span class="tag ${rule.severity === 'ERROR' ? 'risk' : (rule.severity === 'WARNING' ? 'warn' : '')}" style="font-size: 9px;">${escapeHtml(rule.severity)}</span>
+                                ${!rule.enabled ? '<span class="tag" style="font-size: 9px; background: #333;">DISABLED</span>' : ''}
+                            </div>
+                            <div style="font-size: 11px; color: #888; margin-bottom: 8px;">${escapeHtml(rule.message)}</div>
+                            <div style="font-family: var(--font-mono); font-size: 10px; color: #666; background: #0a0a0a; padding: 8px; border-radius: 3px; overflow-x: auto;">
+                                ${escapeHtml(rule.pattern || 'Multiple patterns')}
+                            </div>
+                        </div>
+                        <div style="display: flex; gap: 5px; margin-left: 15px;">
+                            <button onclick="toggleSemgrepRule('${escapeHtml(rule.id)}')" class="action-btn" style="width: 32px; height: 32px; padding: 0; background: ${!rule.enabled ? 'rgba(0, 255, 157, 0.1)' : 'rgba(100, 100, 100, 0.2)'}; color: ${!rule.enabled ? 'var(--accent-primary)' : '#ccc'}; border: 1px solid #333;" title="${!rule.enabled ? 'Enable Rule' : 'Disable Rule'}">
+                                ${!rule.enabled
+                                    ? '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"></polyline></svg>'
+                                    : '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"></line></svg>'}
+                            </button>
+                            <button onclick="deleteSemgrepRule('${escapeHtml(rule.id)}')" class="action-btn" style="width: 32px; height: 32px; padding: 0; background: rgba(255, 0, 85, 0.1); color: #ff0055; border: 1px solid rgba(255, 0, 85, 0.2);" title="Delete Rule">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+        } else {
+            html += '<div style="text-align: center; color: #666; padding: 20px; border: 1px dashed #333; border-radius: 4px;">No custom rules defined. Add one above!</div>';
+        }
+
+        rulesListEl.innerHTML = html;
+
+    } catch (error) {
+        console.error('Error loading Semgrep rules:', error);
+        statusEl.textContent = 'ERROR';
+        statusEl.style.color = 'var(--accent-secondary)';
+        rulesListEl.innerHTML = `<div style="text-align: center; color: var(--accent-secondary); padding: 30px;">Error loading rules: ${escapeHtml(error.message)}</div>`;
+    }
+}
+
+window.toggleRuleset = async function(rulesetId) {
+    try {
+        const response = await fetch(`/api/semgrep/rulesets/${encodeURIComponent(rulesetId)}/toggle`, {
+            method: 'POST'
+        });
+        const data = await response.json();
+
+        if (data.success) {
+            loadSemgrepRules(); // Reload UI
+        } else {
+            alert('Failed to toggle ruleset');
+        }
+    } catch (error) {
+        console.error('Error toggling ruleset:', error);
+    }
+}
+
+window.toggleSemgrepRule = async function(ruleId) {
+    try {
+        const response = await fetch(`/api/semgrep/rules/${encodeURIComponent(ruleId)}/toggle`, {
+            method: 'POST'
+        });
+        const data = await response.json();
+
+        if (data.success) {
+            loadSemgrepRules(); // Reload UI
+        } else {
+            alert('Failed to toggle rule');
+        }
+    } catch (error) {
+        console.error('Error toggling rule:', error);
+    }
+}
+
+window.addSemgrepRule = async function() {
+    const ruleId = document.getElementById('new-rule-id').value.trim();
+    const pattern = document.getElementById('new-rule-pattern').value.trim();
+    const message = document.getElementById('new-rule-message').value.trim();
+    const severity = document.getElementById('new-rule-severity').value;
+
+    if (!ruleId || !pattern || !message) {
+        alert('Please fill in all fields: Rule ID, Pattern, and Message.');
+        return;
+    }
+
+    // Validate rule ID format
+    if (!/^[a-zA-Z0-9_-]+$/.test(ruleId)) {
+        alert('Rule ID can only contain letters, numbers, hyphens, and underscores.');
+        return;
+    }
+
+    try {
+        const response = await fetch('/api/semgrep/rules', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                id: ruleId,
+                pattern: pattern,
+                message: message,
+                severity: severity,
+                languages: ['php']
+            })
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            // Clear form
+            document.getElementById('new-rule-id').value = '';
+            document.getElementById('new-rule-pattern').value = '';
+            document.getElementById('new-rule-message').value = '';
+
+            // Reload rules
+            loadSemgrepRules();
+        } else {
+            alert('Failed to add rule: ' + (data.error || 'Unknown error'));
+        }
+    } catch (error) {
+        alert('Error adding rule: ' + error.message);
+    }
+}
+
+window.deleteSemgrepRule = async function(ruleId) {
+    if (!confirm(`Are you sure you want to delete the rule "${ruleId}"?`)) {
+        return;
+    }
+
+    try {
+        const response = await fetch(`/api/semgrep/rules/${encodeURIComponent(ruleId)}`, {
+            method: 'DELETE'
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            loadSemgrepRules();
+        } else {
+            alert('Failed to delete rule: ' + (data.error || 'Unknown error'));
+        }
+    } catch (error) {
+        alert('Error deleting rule: ' + error.message);
+    }
 }

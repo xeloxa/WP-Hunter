@@ -12,7 +12,8 @@ from typing import List, Dict, Any, Optional, Callable
 from datetime import datetime
 
 from wp_hunter.config import (
-    Colors, RISKY_TAGS, USER_FACING_TAGS, SECURITY_KEYWORDS, FEATURE_KEYWORDS
+    Colors, RISKY_TAGS, USER_FACING_TAGS, SECURITY_KEYWORDS, FEATURE_KEYWORDS,
+    MAX_POOL_SIZE
 )
 from wp_hunter.models import ScanConfig, PluginResult, CodeAnalysisResult
 from wp_hunter.analyzers.code_analyzer import CodeAnalyzer
@@ -21,34 +22,43 @@ from wp_hunter.analyzers.vps_scorer import calculate_vps_score
 logger = setup_logger(__name__)
 
 
-# Thread-safe lock for console output
+# Thread-safe lock for console output and session management
 print_lock = threading.Lock()
+_session_lock = threading.Lock()
 
 # Global session for connection pooling
 _session: Optional[requests.Session] = None
 
 
 def get_session(pool_size: int = 100) -> requests.Session:
-    """Get or create the global requests session with optimized pooling."""
+    """
+    Get or create the global requests session with optimized pooling.
+
+    Thread-safe implementation with connection pool size limit.
+    """
     global _session
-    if _session is None:
-        _session = requests.Session()
-        adapter = requests.adapters.HTTPAdapter(
-            pool_connections=pool_size,
-            pool_maxsize=pool_size,
-            max_retries=3
-        )
-        _session.mount('https://', adapter)
-        _session.mount('http://', adapter)
-    return _session
+    with _session_lock:
+        if _session is None:
+            # Apply security limit to pool size
+            safe_pool_size = min(pool_size, MAX_POOL_SIZE)
+            _session = requests.Session()
+            adapter = requests.adapters.HTTPAdapter(
+                pool_connections=safe_pool_size,
+                pool_maxsize=safe_pool_size,
+                max_retries=3
+            )
+            _session.mount('https://', adapter)
+            _session.mount('http://', adapter)
+        return _session
 
 
 def close_session():
-    """Close the global session."""
+    """Close the global session (thread-safe)."""
     global _session
-    if _session:
-        _session.close()
-        _session = None
+    with _session_lock:
+        if _session:
+            _session.close()
+            _session = None
 
 
 def calculate_days_ago(date_str: Optional[str]) -> int:

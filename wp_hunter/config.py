@@ -11,6 +11,17 @@ CURRENT_WP_VERSION = 6.7
 MAX_WORKERS = 5
 DEFAULT_SERVER_PORT = 8080
 
+# --- SECURITY LIMITS ---
+# Maximum connection pool size to prevent DoS via resource exhaustion
+MAX_POOL_SIZE = 50
+# Maximum threads for aggressive scanning mode
+MAX_SCAN_THREADS_AGGRESSIVE = 50
+MAX_SCAN_THREADS_NORMAL = 5
+# Request timeout in seconds
+DEFAULT_REQUEST_TIMEOUT = 30
+# Maximum pages for sync operations
+MAX_SYNC_PAGES = 1000
+
 # --- RISKY TAG SETS ---
 RISKY_TAGS: Set[str] = {
     # E-commerce & Payment

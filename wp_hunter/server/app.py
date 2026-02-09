@@ -6,11 +6,14 @@ REST API and WebSocket endpoints for the web dashboard.
 
 import asyncio
 import json
+import re
+import subprocess
 import threading
 from pathlib import Path
 from typing import Dict, Any, List, Optional
 from datetime import datetime
 
+import yaml
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, BackgroundTasks
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse, FileResponse
@@ -20,6 +23,7 @@ from wp_hunter.models import ScanConfig, ScanStatus, PluginResult
 from wp_hunter.database.repository import ScanRepository
 from wp_hunter.scanners.plugin_scanner import PluginScanner
 from wp_hunter.scanners.theme_scanner import ThemeScanner
+from wp_hunter.scanners.semgrep_scanner import SemgrepScanner, SEMGREP_REGISTRY_RULESETS, SEMGREP_COMMUNITY_SOURCES
 from wp_hunter.downloaders.plugin_downloader import PluginDownloader
 
 
@@ -46,6 +50,14 @@ class ScanRequest(BaseModel):
 class DownloadRequest(BaseModel):
     slug: str
     download_url: str
+
+
+class SemgrepRuleRequest(BaseModel):
+    id: str
+    pattern: str
+    message: str
+    severity: str = "WARNING"
+    languages: List[str] = ["php"]
 
 
 # Connection manager for WebSockets
@@ -255,6 +267,203 @@ def create_app() -> FastAPI:
     async def remove_favorite(slug: str):
         success = repo.remove_favorite(slug)
         return {"success": success}
+
+    # ==========================================
+    # SEMGREP RULES API
+    # ==========================================
+
+    # Path to custom rules file
+    custom_rules_path = Path(__file__).parent.parent / "semgrep_results" / "custom_rules.yaml"
+    # Path to disabled configuration file
+    disabled_config_path = Path(__file__).parent.parent / "semgrep_results" / "disabled_config.json"
+
+    def get_disabled_config() -> Dict[str, List[str]]:
+        """Load disabled rules and rulesets configuration."""
+        default_config = {"rules": [], "rulesets": []}
+        if disabled_config_path.exists():
+            try:
+                with open(disabled_config_path, 'r') as f:
+                    config = json.load(f)
+                    return {
+                        "rules": config.get("rules", []),
+                        "rulesets": config.get("rulesets", [])
+                    }
+            except Exception:
+                pass
+        return default_config
+
+    def save_disabled_config(config: Dict[str, List[str]]):
+        """Save disabled configuration."""
+        disabled_config_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(disabled_config_path, 'w') as f:
+            json.dump(config, f)
+
+    @app.get("/api/semgrep/rules")
+    async def get_semgrep_rules():
+        """Get Semgrep configuration (rulesets and custom rules)."""
+        # Check if Semgrep is installed
+        try:
+            result = subprocess.run(
+                ["semgrep", "--version"],
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+            installed = result.returncode == 0
+        except Exception:
+            installed = False
+
+        disabled_config = get_disabled_config()
+        disabled_rules = set(disabled_config["rules"])
+        disabled_rulesets = set(disabled_config["rulesets"])
+
+        # 1. Prepare Rulesets List
+        rulesets = []
+        for key, info in SEMGREP_REGISTRY_RULESETS.items():
+            rulesets.append({
+                "id": key,
+                "name": info.get("description", key), # Use description as name
+                "url": info.get("url", "#"),
+                "enabled": key not in disabled_rulesets,
+                "description": info.get("description", "")
+            })
+
+        # 2. Load Custom Rules
+        custom_rules = []
+        if custom_rules_path.exists():
+            try:
+                with open(custom_rules_path, 'r') as f:
+                    custom_yaml = yaml.safe_load(f)
+                    if custom_yaml and 'rules' in custom_yaml:
+                        for rule in custom_yaml['rules']:
+                            rule_id = rule.get('id', 'unknown')
+                            pattern = rule.get('pattern', '')
+                            if not pattern and 'patterns' in rule:
+                                patterns = rule['patterns']
+                                if patterns:
+                                    pattern = str(patterns[0]) if isinstance(patterns[0], str) else patterns[0].get('pattern', 'Complex')
+
+                            custom_rules.append({
+                                "id": rule_id,
+                                "message": rule.get('message', ''),
+                                "severity": rule.get('severity', 'WARNING'),
+                                "pattern": pattern,
+                                "is_custom": True,
+                                "enabled": rule_id not in disabled_rules
+                            })
+            except Exception as e:
+                print(f"Error loading custom rules: {e}")
+
+        return {
+            "installed": installed,
+            "rulesets": rulesets,
+            "custom_rules": custom_rules,
+            "community_sources": SEMGREP_COMMUNITY_SOURCES
+        }
+
+    @app.post("/api/semgrep/rules")
+    async def add_semgrep_rule(rule: SemgrepRuleRequest):
+        """Add a custom Semgrep rule."""
+        # Validate rule ID (alphanumeric, hyphens, underscores only)
+        if not re.match(r'^[a-zA-Z0-9_-]+$', rule.id):
+            raise HTTPException(status_code=400, detail="Invalid rule ID format")
+
+        # Ensure directory exists
+        custom_rules_path.parent.mkdir(parents=True, exist_ok=True)
+
+        # Load existing custom rules or create new
+        existing_rules = {"rules": []}
+        if custom_rules_path.exists():
+            try:
+                with open(custom_rules_path, 'r') as f:
+                    existing_rules = yaml.safe_load(f) or {"rules": []}
+            except Exception:
+                existing_rules = {"rules": []}
+
+        # Check for duplicate ID
+        for existing in existing_rules.get('rules', []):
+            if existing.get('id') == rule.id:
+                raise HTTPException(status_code=400, detail=f"Rule with ID '{rule.id}' already exists")
+
+        # Add new rule
+        new_rule = {
+            "id": rule.id,
+            "pattern": rule.pattern,
+            "message": rule.message,
+            "languages": rule.languages,
+            "severity": rule.severity
+        }
+        existing_rules['rules'].append(new_rule)
+
+        # Save to file
+        try:
+            with open(custom_rules_path, 'w') as f:
+                yaml.dump(existing_rules, f, default_flow_style=False, sort_keys=False)
+            return {"success": True, "rule_id": rule.id}
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Failed to save rule: {str(e)}")
+
+    @app.delete("/api/semgrep/rules/{rule_id}")
+    async def delete_semgrep_rule(rule_id: str):
+        """Delete a custom Semgrep rule."""
+        if not custom_rules_path.exists():
+            raise HTTPException(status_code=404, detail="No custom rules file found")
+
+        try:
+            with open(custom_rules_path, 'r') as f:
+                rules_data = yaml.safe_load(f) or {"rules": []}
+
+            # Find and remove the rule
+            original_count = len(rules_data.get('rules', []))
+            rules_data['rules'] = [r for r in rules_data.get('rules', []) if r.get('id') != rule_id]
+
+            if len(rules_data['rules']) == original_count:
+                raise HTTPException(status_code=404, detail=f"Rule '{rule_id}' not found")
+
+            # Save updated rules
+            with open(custom_rules_path, 'w') as f:
+                yaml.dump(rules_data, f, default_flow_style=False, sort_keys=False)
+
+            return {"success": True, "deleted": rule_id}
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Failed to delete rule: {str(e)}")
+
+    @app.post("/api/semgrep/rules/{rule_id}/toggle")
+    async def toggle_custom_rule(rule_id: str):
+        """Enable or disable a custom Semgrep rule."""
+        config = get_disabled_config()
+
+        if rule_id in config["rules"]:
+            # Enable
+            config["rules"].remove(rule_id)
+            save_disabled_config(config)
+            return {"success": True, "rule_id": rule_id, "enabled": True}
+        else:
+            # Disable
+            config["rules"].append(rule_id)
+            save_disabled_config(config)
+            return {"success": True, "rule_id": rule_id, "enabled": False}
+
+    @app.post("/api/semgrep/rulesets/{ruleset_id}/toggle")
+    async def toggle_ruleset(ruleset_id: str):
+        """Enable or disable a Semgrep ruleset."""
+        if ruleset_id not in SEMGREP_REGISTRY_RULESETS:
+             raise HTTPException(status_code=404, detail=f"Ruleset '{ruleset_id}' not found")
+
+        config = get_disabled_config()
+
+        if ruleset_id in config["rulesets"]:
+            # Enable
+            config["rulesets"].remove(ruleset_id)
+            save_disabled_config(config)
+            return {"success": True, "ruleset_id": ruleset_id, "enabled": True}
+        else:
+            # Disable
+            config["rulesets"].append(ruleset_id)
+            save_disabled_config(config)
+            return {"success": True, "ruleset_id": ruleset_id, "enabled": False}
 
     async def run_scan_task(session_id: int, config: ScanConfig, repo: ScanRepository):
         """Background task to run a scan."""

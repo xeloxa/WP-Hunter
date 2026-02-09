@@ -65,15 +65,30 @@ class SVNDownloader:
         except (subprocess.SubprocessError, FileNotFoundError):
             return False
     
+    def _sanitize_slug(self, slug: str) -> str:
+        """
+        Sanitize plugin slug to prevent path traversal attacks.
+
+        Only allows alphanumeric characters, hyphens, and underscores.
+        """
+        import re
+        # Remove any path components (../, ./, etc.)
+        safe_slug = Path(slug).name
+        # Only allow safe characters
+        safe_slug = re.sub(r'[^a-zA-Z0-9_-]', '', safe_slug)
+        if not safe_slug:
+            raise ValueError(f"Invalid plugin slug: {slug}")
+        return safe_slug
+
     def download_plugin(
-        self, 
+        self,
         slug: str,
         version: str = "trunk",
         force: bool = False
     ) -> SVNDownloadResult:
         """
         Download a single plugin from SVN.
-        
+
         Args:
             slug: Plugin slug
             version: Version to download (default: trunk, or tags/1.0.0)
@@ -81,8 +96,14 @@ class SVNDownloader:
         """
         if self.stop_event.is_set():
             return SVNDownloadResult(slug=slug, success=False, error="Stopped")
-        
-        plugin_dir = self.output_dir / slug
+
+        # Path Traversal Prevention: Sanitize slug
+        try:
+            safe_slug = self._sanitize_slug(slug)
+        except ValueError as e:
+            return SVNDownloadResult(slug=slug, success=False, error=str(e))
+
+        plugin_dir = self.output_dir / safe_slug
         
         # Check if already exists
         if plugin_dir.exists() and not force:
@@ -93,11 +114,11 @@ class SVNDownloader:
                 error="Already exists"
             )
         
-        # Build SVN URL
+        # Build SVN URL using sanitized slug
         if version == "trunk":
-            svn_url = f"{self.SVN_BASE_URL}/{slug}/trunk/"
+            svn_url = f"{self.SVN_BASE_URL}/{safe_slug}/trunk/"
         else:
-            svn_url = f"{self.SVN_BASE_URL}/{slug}/tags/{version}/"
+            svn_url = f"{self.SVN_BASE_URL}/{safe_slug}/tags/{version}/"
         
         try:
             # Remove existing directory if force

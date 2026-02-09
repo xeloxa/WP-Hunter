@@ -4,6 +4,7 @@ import os
 import json
 import subprocess
 import threading
+import yaml
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 from dataclasses import dataclass
@@ -14,118 +15,56 @@ from wp_hunter.config import Colors
 
 print_lock = threading.Lock()
 
-DEFAULT_SEMGREP_RULES = """
-rules:
-  - id: php-sql-injection
-    patterns:
-      - pattern-either:
-          - pattern: $WPDB->query($X . $Y)
-          - pattern: $WPDB->prepare($X . $Y, ...)
-          - pattern: mysqli_query($CONN, $X . $Y)
-          - pattern: mysql_query($X . $Y)
-    message: Potential SQL injection - string concatenation in query
-    languages: [php]
-    severity: ERROR
+# Official Semgrep Registry Rulesets + WP-Hunter Core
+SEMGREP_REGISTRY_RULESETS = {
+    "owasp-top-ten": {
+        "config": "p/owasp-top-ten",
+        "description": "OWASP Top 10 vulnerabilities (2021)",
+        "url": "https://semgrep.dev/p/owasp-top-ten"
+    },
+    "php-security": {
+        "config": "p/php",
+        "description": "PHP security best practices",
+        "url": "https://semgrep.dev/p/php"
+    },
+    "security-audit": {
+        "config": "p/security-audit",
+        "description": "Comprehensive security audit rules",
+        "url": "https://semgrep.dev/p/security-audit"
+    }
+}
 
-  - id: php-command-injection
-    patterns:
-      - pattern-either:
-          - pattern: exec($X . $Y)
-          - pattern: shell_exec($X . $Y)
-          - pattern: system($X . $Y)
-          - pattern: passthru($X . $Y)
-          - pattern: popen($X . $Y, ...)
-          - pattern: proc_open($X . $Y, ...)
-    message: Potential command injection
-    languages: [php]
-    severity: ERROR
+# Default enabled rulesets
+DEFAULT_ENABLED_RULESETS = [
+    "owasp-top-ten",
+    "php-security",
+    "security-audit"
+]
 
-  - id: php-code-injection
-    patterns:
-      - pattern-either:
-          - pattern: eval($X)
-          - pattern: create_function($X, $Y)
-          - pattern: assert($X)
-          - pattern: preg_replace("/.*/e", $X, ...)
-    message: Potential code injection via eval/assert
-    languages: [php]
-    severity: ERROR
 
-  - id: php-file-inclusion
-    patterns:
-      - pattern-either:
-          - pattern: include($X)
-          - pattern: include_once($X)
-          - pattern: require($X)
-          - pattern: require_once($X)
-    message: Dynamic file inclusion
-    languages: [php]
-    severity: WARNING
-
-  - id: php-ssrf
-    patterns:
-      - pattern-either:
-          - pattern: file_get_contents($URL)
-          - pattern: curl_exec($CH)
-          - pattern: wp_remote_get($URL)
-          - pattern: wp_remote_post($URL, ...)
-    message: Potential SSRF - external request
-    languages: [php]
-    severity: WARNING
-
-  - id: wp-ajax-missing-nonce
-    patterns:
-      - pattern: |
-          add_action('wp_ajax_$ACTION', $CALLBACK);
-          ...
-          function $CALLBACK(...) {
-            ...
-          }
-      - pattern-not: |
-          function $CALLBACK(...) {
-            ...
-            wp_verify_nonce(...)
-            ...
-          }
-      - pattern-not: |
-          function $CALLBACK(...) {
-            ...
-            check_ajax_referer(...)
-            ...
-          }
-    message: AJAX handler may be missing nonce verification
-    languages: [php]
-    severity: WARNING
-
-  - id: wp-unescaped-output
-    patterns:
-      - pattern-either:
-          - pattern: echo $_GET[$X]
-          - pattern: echo $_POST[$X]
-          - pattern: echo $_REQUEST[$X]
-          - pattern: print $_GET[$X]
-          - pattern: print $_POST[$X]
-    message: Unescaped user input in output (XSS)
-    languages: [php]
-    severity: ERROR
-
-  - id: php-deserialization
-    patterns:
-      - pattern: unserialize($X)
-    message: Unsafe deserialization
-    languages: [php]
-    severity: ERROR
-
-  - id: wp-direct-db-query
-    patterns:
-      - pattern-either:
-          - pattern: $WPDB->query("$X")
-          - pattern: $WPDB->get_results("$X")
-          - pattern: $WPDB->get_row("$X")
-    message: Direct database query - consider using prepared statements
-    languages: [php]
-    severity: INFO
-"""
+# Community rule sources for user reference
+SEMGREP_COMMUNITY_SOURCES = [
+    {
+        "name": "Semgrep Registry",
+        "url": "https://semgrep.dev/r",
+        "description": "Official Semgrep rule registry with 3000+ rules"
+    },
+    {
+        "name": "OWASP Top 10 Rules",
+        "url": "https://semgrep.dev/p/owasp-top-ten",
+        "description": "Rules for OWASP Top 10 2021 vulnerabilities"
+    },
+    {
+        "name": "PHP Security Rules",
+        "url": "https://semgrep.dev/p/php",
+        "description": "PHP-specific security patterns"
+    },
+    {
+        "name": "Security Audit Pack",
+        "url": "https://semgrep.dev/p/security-audit",
+        "description": "Comprehensive security audit rules"
+    }
+]
 
 
 @dataclass
@@ -137,27 +76,78 @@ class SemgrepResult:
 
 
 class SemgrepScanner:
-    
+
     def __init__(
         self,
         rules_path: Optional[str] = None,
         output_dir: str = "./semgrep_results",
-        workers: int = 3
+        workers: int = 3,
+        use_registry_rules: bool = True,
+        registry_rulesets: Optional[List[str]] = None
     ):
         self.rules_path = rules_path
         self.output_dir = Path(output_dir)
         self.workers = workers
         self.stop_event = threading.Event()
+        self.use_registry_rules = use_registry_rules
+        # Default to OWASP + PHP + Security Audit rulesets
+        self.registry_rulesets = registry_rulesets or DEFAULT_ENABLED_RULESETS
         self.output_dir.mkdir(parents=True, exist_ok=True)
-        if not rules_path:
-            self._create_default_rules()
-    
-    def _create_default_rules(self):
-        rules_file = self.output_dir / "wp_security_rules.yaml"
-        if not rules_file.exists():
-            rules_file.write_text(DEFAULT_SEMGREP_RULES)
-        self.rules_path = str(rules_file)
-    
+
+    def _filter_custom_rules(self) -> Optional[str]:
+        """Create a temporary custom rules file with disabled rules removed."""
+        custom_file = self.output_dir / "custom_rules.yaml"
+        if not custom_file.exists():
+            return None
+
+        disabled_file = self.output_dir / "disabled_rules.json"
+        disabled_ids = []
+        if disabled_file.exists():
+            try:
+                with open(disabled_file, 'r') as f:
+                    disabled_ids = json.load(f)
+            except Exception:
+                pass
+
+        try:
+            with open(custom_file, 'r') as f:
+                rules_data = yaml.safe_load(f)
+
+            if rules_data and 'rules' in rules_data:
+                active_rules = [
+                    r for r in rules_data['rules']
+                    if r.get('id') not in disabled_ids
+                ]
+
+                if not active_rules:
+                    return None
+
+                filtered_data = {"rules": active_rules}
+                filtered_file = self.output_dir / "active_custom_rules.yaml"
+                with open(filtered_file, 'w') as f:
+                    yaml.dump(filtered_data, f, default_flow_style=False, sort_keys=False)
+                return str(filtered_file)
+        except Exception:
+            return str(custom_file) # Fallback to original
+
+        return str(custom_file)
+
+    def _get_config_args(self) -> List[str]:
+        """Build config arguments for semgrep command."""
+        configs = []
+
+        # 1. Custom user rules (filtered)
+        filtered_custom = self._filter_custom_rules()
+        if filtered_custom:
+            configs.extend(["--config", filtered_custom])
+
+        # 2. Registry rulesets (OWASP, PHP, etc.)
+        if self.use_registry_rules:
+            for ruleset in self.registry_rulesets:
+                configs.extend(["--config", ruleset])
+
+        return configs
+
     def _check_semgrep_available(self) -> bool:
         try:
             result = subprocess.run(
@@ -169,23 +159,24 @@ class SemgrepScanner:
             return result.returncode == 0
         except (subprocess.SubprocessError, FileNotFoundError):
             return False
-    
+
     def scan_plugin(self, plugin_path: str, slug: str) -> SemgrepResult:
         if self.stop_event.is_set():
             return SemgrepResult(slug=slug, findings=[], errors=["Stopped"], success=False)
-        
+
         output_file = self.output_dir / f"{slug}_results.json"
-        
+
         try:
-            cmd = [
-                "semgrep",
-                "--config", self.rules_path,
+            # Build command with all config sources
+            cmd = ["semgrep"]
+            cmd.extend(self._get_config_args())
+            cmd.extend([
                 "--json",
                 "--output", str(output_file),
                 "--no-git-ignore",
                 plugin_path
-            ]
-            
+            ])
+
             result = subprocess.run(
                 cmd,
                 capture_output=True,
@@ -195,20 +186,20 @@ class SemgrepScanner:
 
             findings = []
             errors = []
-            
+
             if output_file.exists():
                 with open(output_file, 'r') as f:
                     data = json.load(f)
                     findings = data.get('results', [])
                     errors = [e.get('message', '') for e in data.get('errors', [])]
-            
+
             return SemgrepResult(
                 slug=slug,
                 findings=findings,
                 errors=errors,
                 success=True
             )
-            
+
         except subprocess.TimeoutExpired:
             return SemgrepResult(
                 slug=slug,
@@ -223,71 +214,76 @@ class SemgrepScanner:
                 errors=[str(e)],
                 success=False
             )
-    
+
     def scan_plugins(self, plugin_dirs: List[str], verbose: bool = True) -> Dict[str, SemgrepResult]:
         if not self._check_semgrep_available():
             if verbose:
-                print(f"{Colors.RED}[!] Semgrep is not installed.{Colors.RESET}")
-                print(f"    Install with: pip install semgrep")
-                print(f"    Or: brew install semgrep")
+                print(f"{Colors.RED}[!] Semgrep is not installed or not found in PATH.{Colors.RESET}")
+                print(f"    Semgrep is required for static code analysis.")
+                print(f"")
+                print(f"    Installation options:")
+                print(f"      pip install semgrep     # Python package")
+                print(f"      brew install semgrep    # macOS")
+                print(f"      apt install semgrep     # Debian/Ubuntu")
+                print(f"")
+                print(f"    After installation, ensure 'semgrep' is in your PATH.")
             return {}
-        
+
         if verbose:
-            print(f"\n{Colors.CYAN}{'='*60}{Colors.RESET}")
+            print(f"\\n{Colors.CYAN}{'='*60}{Colors.RESET}")
             print(f"{Colors.BOLD}🔍 Running Semgrep Security Scan{Colors.RESET}")
             print(f"{Colors.CYAN}{'='*60}{Colors.RESET}")
             print(f"  📁 Plugins: {len(plugin_dirs)}")
-            print(f"  📋 Rules: {self.rules_path}")
             print(f"  📄 Output: {self.output_dir}")
-            print(f"{Colors.CYAN}{'='*60}{Colors.RESET}\n")
-        
+            print(f"{Colors.CYAN}{'='*60}{Colors.RESET}\\n")
+
         results: Dict[str, SemgrepResult] = {}
         total_findings = 0
-        
+
         with ThreadPoolExecutor(max_workers=self.workers) as executor:
             future_to_plugin = {}
-            
+
             for plugin_path in plugin_dirs:
                 path = Path(plugin_path)
                 if path.exists() and path.is_dir():
                     slug = path.name
                     future = executor.submit(self.scan_plugin, str(path), slug)
                     future_to_plugin[future] = slug
-            
+
             completed = 0
             for future in as_completed(future_to_plugin):
                 if self.stop_event.is_set():
                     break
-                
+
                 slug = future_to_plugin[future]
                 completed += 1
-                
+
                 try:
                     result = future.result()
                     results[slug] = result
-                    
+
                     finding_count = len(result.findings)
                     total_findings += finding_count
-                    
+
                     if verbose:
                         if finding_count > 0:
                             color = Colors.RED if finding_count >= 5 else Colors.YELLOW
                             print(f"  [{completed}/{len(plugin_dirs)}] {color}⚠{Colors.RESET} {slug}: {finding_count} findings")
                         else:
                             print(f"  [{completed}/{len(plugin_dirs)}] {Colors.GREEN}✓{Colors.RESET} {slug}: clean")
-                            
+
                 except Exception as e:
                     if verbose:
                         print(f"  [{completed}/{len(plugin_dirs)}] {Colors.RED}✗{Colors.RESET} {slug}: {e}")
-        
+
         if verbose and results:
             self._print_summary(results, total_findings)
         self._save_combined_report(results)
-        
+
         return results
-    
+
     def _print_summary(self, results: Dict[str, SemgrepResult], total_findings: int):
-        print(f"\n{Colors.CYAN}{'='*60}{Colors.RESET}")
+        print(f"\\n{Colors.CYAN}{'='*60}{Colors.RESET}")
         print(f"{Colors.BOLD}📊 Scan Summary{Colors.RESET}")
         print(f"{Colors.CYAN}{'='*60}{Colors.RESET}")
         print(f"  🔌 Plugins scanned: {len(results)}")
@@ -297,9 +293,9 @@ class SemgrepScanner:
             for finding in result.findings:
                 sev = finding.get('extra', {}).get('severity', 'INFO')
                 severities[sev] = severities.get(sev, 0) + 1
-        
+
         if total_findings > 0:
-            print(f"\n  By Severity:")
+            print(f"\\n  By Severity:")
             if severities.get('ERROR', 0) > 0:
                 print(f"    {Colors.RED}ERROR{Colors.RESET}: {severities['ERROR']}")
             if severities.get('WARNING', 0) > 0:
@@ -311,33 +307,33 @@ class SemgrepScanner:
             key=lambda x: len(x[1].findings),
             reverse=True
         )[:5]
-        
+
         if sorted_results and len(sorted_results[0][1].findings) > 0:
-            print(f"\n  Top Vulnerable Plugins:")
+            print(f"\\n  Top Vulnerable Plugins:")
             for slug, result in sorted_results:
                 if len(result.findings) > 0:
                     print(f"    • {slug}: {len(result.findings)} findings")
-        
-        print(f"\n  📁 Results saved to: {self.output_dir}")
-        print(f"{Colors.CYAN}{'='*60}{Colors.RESET}\n")
-    
+
+        print(f"\\n  📁 Results saved to: {self.output_dir}")
+        print(f"{Colors.CYAN}{'='*60}{Colors.RESET}\\n")
+
     def _save_combined_report(self, results: Dict[str, SemgrepResult]):
         report = {
             "total_plugins": len(results),
             "total_findings": sum(len(r.findings) for r in results.values()),
             "plugins": {}
         }
-        
+
         for slug, result in results.items():
             report["plugins"][slug] = {
                 "findings": result.findings,
                 "errors": result.errors,
                 "success": result.success
             }
-        
+
         report_path = self.output_dir / "combined_report.json"
         with open(report_path, 'w') as f:
             json.dump(report, f, indent=2)
-    
+
     def stop(self):
         self.stop_event.set()

@@ -219,8 +219,18 @@ class ScanRepository:
             
             return sessions
     
+    # SQL Injection Prevention: Whitelisted column mappings
+    _VALID_SORT_COLUMNS = {
+        "score": "score",
+        "installations": "installations",
+        "days_since_update": "days_since_update",
+        "name": "name",
+        "slug": "slug"
+    }
+    _VALID_SORT_ORDERS = {"ASC", "DESC"}
+
     def get_session_results(
-        self, 
+        self,
         session_id: int,
         sort_by: str = "score",
         sort_order: str = "desc",
@@ -229,20 +239,19 @@ class ScanRepository:
         """Get results for a scan session."""
         with get_db(self.db_path) as conn:
             cursor = conn.cursor()
-            
-            # Validate sort column
-            valid_columns = {"score", "installations", "days_since_update", "name", "slug"}
-            if sort_by not in valid_columns:
-                sort_by = "score"
-            
-            order = "DESC" if sort_order.lower() == "desc" else "ASC"
-            
-            cursor.execute(f"""
-                SELECT * FROM scan_results 
+
+            # SQL Injection Prevention: Use whitelisted column mapping
+            safe_sort_column = self._VALID_SORT_COLUMNS.get(sort_by, "score")
+            safe_sort_order = "DESC" if sort_order.upper() in self._VALID_SORT_ORDERS and sort_order.upper() == "DESC" else "ASC"
+
+            # Build query using safe, validated values only
+            query = f"""
+                SELECT * FROM scan_results
                 WHERE session_id = ?
-                ORDER BY {sort_by} {order}
+                ORDER BY {safe_sort_column} {safe_sort_order}
                 LIMIT ?
-            """, (session_id, limit))
+            """
+            cursor.execute(query, (session_id, limit))
             
             results = []
             for row in cursor.fetchall():

@@ -14,13 +14,18 @@ print_lock = threading.Lock()
 _sync_session: Optional[requests.Session] = None
 
 
+# DoS Prevention: Maximum connection pool size
+MAX_POOL_SIZE = 50
+
 def get_sync_session(pool_size: int = 100) -> requests.Session:
     global _sync_session
     if _sync_session is None:
+        # Limit pool size to prevent resource exhaustion
+        safe_pool_size = min(pool_size, MAX_POOL_SIZE)
         _sync_session = requests.Session()
         adapter = requests.adapters.HTTPAdapter(
-            pool_connections=pool_size,
-            pool_maxsize=pool_size,
+            pool_connections=safe_pool_size,
+            pool_maxsize=safe_pool_size,
             max_retries=3
         )
         _sync_session.mount('https://', adapter)
