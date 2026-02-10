@@ -105,7 +105,7 @@ WP-Hunter verfügt jetzt über ein leistungsstarkes lokales Dashboard für visue
 ### Einrichtung
 1. Repository klonen:
 ```bash
-git clone https://github.com/xelox/WP-Hunter.git
+git clone https://github.com/xeloxa/WP-Hunter.git
 cd WP-Hunter
 ```
 2. Virtuelle Umgebung erstellen und aktivieren:

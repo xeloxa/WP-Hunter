@@ -105,7 +105,7 @@ WP-Hunter 现在为视觉研究人员提供了一个强大的本地仪表板。
 ### 设置
 1. 克隆仓库：
 ```bash
-git clone https://github.com/xelox/WP-Hunter.git
+git clone https://github.com/xeloxa/WP-Hunter.git
 cd WP-Hunter
 ```
 2. 创建并激活虚拟环境：

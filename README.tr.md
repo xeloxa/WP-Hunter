@@ -105,7 +105,7 @@ WP-Hunter artık görsel araştırmacılar için güçlü bir yerel dashboard su
 ### Kurulum Adımları
 1. Repoyu klonlayın:
 ```bash
-git clone https://github.com/xelox/WP-Hunter.git
+git clone https://github.com/xeloxa/WP-Hunter.git
 cd WP-Hunter
 ```
 2. Virtual environment oluşturun ve aktive edin:

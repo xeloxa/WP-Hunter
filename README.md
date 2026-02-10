@@ -105,7 +105,7 @@ WP-Hunter now features a powerful local dashboard for visual researchers.
 ### Setup
 1. Clone the repository:
 ```bash
-git clone https://github.com/xelox/WP-Hunter.git
+git clone https://github.com/xeloxa/WP-Hunter.git
 cd WP-Hunter
 ```
 2. Create and activate a virtual environment:

@@ -105,7 +105,7 @@ WP-Hunter هي **أداة لاستطلاع إضافات/قوالب ووردبر�
 ### الإعداد
 1. استنساخ المستودع:
 ```bash
-git clone https://github.com/xelox/WP-Hunter.git
+git clone https://github.com/xeloxa/WP-Hunter.git
 cd WP-Hunter
 ```
 2. إنشاء وتفعيل بيئة افتراضية:
