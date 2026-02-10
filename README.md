@@ -8,6 +8,15 @@
   <img src="https://img.shields.io/badge/Platform-Linux%20%7C%20Windows%20%7C%20macOS-lightgrey" alt="Platform">
 </p>
 
+<p align="center">
+  <b>🌐 Languages / Dil / 语言 / اللغات / Sprachen:</b><br>
+  <a href="README.md"><img src="https://img.shields.io/badge/🇬🇧-English-blue" alt="English"></a>
+  <a href="README.tr.md"><img src="https://img.shields.io/badge/🇹🇷-Türkçe-red" alt="Türkçe"></a>
+  <a href="README.zh.md"><img src="https://img.shields.io/badge/🇨🇳-简体中文-yellow" alt="简体中文"></a>
+  <a href="README.ar.md"><img src="https://img.shields.io/badge/🇸🇦-العربية-green" alt="العربية"></a>
+  <a href="README.de.md"><img src="https://img.shields.io/badge/🇩🇪-Deutsch-orange" alt="Deutsch"></a>
+</p>
+
 WP-Hunter is a **WordPress plugin/theme reconnaissance and static analysis (SAST) tool**. It is designed for **security researchers** to evaluate the **vulnerability probability** of plugins by analyzing metadata, installation patterns, update histories, and performing deep **Semgrep-powered source code analysis**.
 
 ## 🚀 Key Features
