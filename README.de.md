@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="banner.png" alt="WP-Hunter Banner" width="600"/>
+  <img src="assets/banner.png" alt="WP-Hunter Banner" width="600"/>
 </div>
 
 <p align="center">

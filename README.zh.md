@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="banner.png" alt="WP-Hunter Banner" width="600"/>
+  <img src="assets/banner.png" alt="WP-Hunter Banner" width="600"/>
 </div>
 
 <p align="center">
@@ -174,7 +174,6 @@ python3 wp-hunter.py --pages 10 --semgrep-scan --limit 20
 ---
 
 ## 📊 VPS 逻辑 (漏洞概率评分)
-
 评分 (0-100) 反映 **未修补** 或 **未知** 漏洞的可能性：
 
 | 指标 | 条件 | 影响 | 推理 |

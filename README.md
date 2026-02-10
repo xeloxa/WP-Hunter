@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="banner.png" alt="WP-Hunter Banner" width="600"/>
+  <img src="assets/banner.png" alt="WP-Hunter Banner" width="600"/>
 </div>
 
 <p align="center">
@@ -191,4 +191,3 @@ The score (0-100) reflects the likelihood of **unpatched** or **unknown** vulner
 ## ⚖️ Legal Disclaimer
 
 This tool is designed for **security research and authorized reconnaissance** purposes only. It is intended to assist security professionals and developers in assessing attack surfaces and evaluating plugin health. The authors are not responsible for any misuse. Always ensure you have appropriate authorization before performing any security-related activities.
-
