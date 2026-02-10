@@ -135,7 +135,8 @@ venv/
 ENV/
 env.bak/
 venv.bak/
-
+.agents
+.claude
 # Spyder project settings
 .spyderproject
 .spyproject
@@ -183,4 +184,7 @@ cython_debug/
 # WP-Hunter specific
 Downloaded_Plugins/
 Plugins/
+.DS_Store.agents/
+wphunter.db
 .DS_Store
+semgrep_results/
