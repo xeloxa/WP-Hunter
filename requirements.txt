@@ -1,14 +1,18 @@
 # WP-Hunter Requirements
 
 # Core
-requests>=2.28.0
+requests>=2.31.0
 rich>=13.0.0
 
 # Web Dashboard
-fastapi>=0.100.0
-uvicorn>=0.22.0
+fastapi>=0.109.0
+uvicorn>=0.27.0
 websockets>=11.0
-pydantic>=2.0.0
+pydantic>=2.5.0
+
+# Security - Rate Limiting
+slowapi>=0.1.9
+limits>=3.7.0
 
 # Database
 # SQLite is built-in
@@ -17,4 +21,7 @@ pydantic>=2.0.0
 # semgrep  # Install separately: pip install semgrep
 
 # Configuration
-pyyaml>=6.0
+pyyaml>=6.0.1
+
+# Typing
+annotated-types>=0.6.0

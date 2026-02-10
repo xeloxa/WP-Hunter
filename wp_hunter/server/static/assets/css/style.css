@@ -596,14 +596,7 @@ output {
     display: flex;
     align-items: center;
     justify-content: center;
-}
-
-.action-btn.random-btn {
-    background: transparent;
-    border: 1px solid var(--accent-secondary);
-    color: var(--accent-secondary);
-    padding: 0;
-    width: 28px; /* Square button matched to height */
+    gap: 6px;
 }
 
 .action-btn.copy-btn {
@@ -621,16 +614,10 @@ output {
 .action-btn.random-btn:hover {
     background: var(--accent-secondary);
     color: #fff;
-    box-shadow: 0 0 15px rgba(255, 0, 85, 0.4);
-}
-
-.action-btn.copy-btn {
-    min-width: 80px;
 }
 
 .action-btn:hover {
     background: #fff;
-    box-shadow: 0 0 15px rgba(0, 255, 157, 0.3);
 }
 
 .terminal-window {

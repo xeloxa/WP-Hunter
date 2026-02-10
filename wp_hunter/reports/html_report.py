@@ -15,7 +15,7 @@ from wp_hunter.config import Colors
 def generate_html_report(results: List[Dict[str, Any]]) -> str:
     """Generates a complete HTML report string from results."""
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    
+
     html = f"""<!DOCTYPE html>
 <html>
 <head>
@@ -157,11 +157,11 @@ def generate_html_report(results: List[Dict[str, Any]]) -> str:
             <div class="stat-label">Total Plugins</div>
         </div>
         <div class="stat-card">
-            <div class="stat-value high">{sum(1 for r in results if r.get('score', 0) >= 50)}</div>
+            <div class="stat-value high">{sum(1 for r in results if r.get("score", 0) >= 50)}</div>
             <div class="stat-label">High Risk</div>
         </div>
         <div class="stat-card">
-            <div class="stat-value">{sum(1 for r in results if r.get('days_since_update', 0) > 730)}</div>
+            <div class="stat-value">{sum(1 for r in results if r.get("days_since_update", 0) > 730)}</div>
             <div class="stat-label">Abandoned</div>
         </div>
     </div>
@@ -180,28 +180,36 @@ def generate_html_report(results: List[Dict[str, Any]]) -> str:
         </thead>
         <tbody>
 """
-    
+
     for res in results:
-        score = res.get('score', 0)
-        score_class = 'score-high' if score >= 50 else ('score-med' if score >= 30 else 'score-low')
-        trusted = '<span class="tag tag-safe">YES</span>' if res.get('author_trusted') else '<span class="tag">NO</span>'
-        
+        score = res.get("score", 0)
+        score_class = (
+            "score-high"
+            if score >= 50
+            else ("score-med" if score >= 30 else "score-low")
+        )
+        trusted = (
+            '<span class="tag tag-safe">YES</span>'
+            if res.get("author_trusted")
+            else '<span class="tag">NO</span>'
+        )
+
         html += f"""
             <tr>
                 <td>
-                    <div class="plugin-name">{res.get('name')}</div>
-                    <div class="plugin-slug">{res.get('slug')}</div>
+                    <div class="plugin-name">{res.get("name")}</div>
+                    <div class="plugin-slug">{res.get("slug")}</div>
                 </td>
-                <td>{res.get('version')}</td>
+                <td>{res.get("version")}</td>
                 <td class="{score_class}">{score}</td>
-                <td>{res.get('installations'):,}+</td>
-                <td>{res.get('days_since_update')} days ago</td>
+                <td>{res.get("installations"):,}+</td>
+                <td>{res.get("days_since_update")} days ago</td>
                 <td>{trusted}</td>
                 <td class="links">
-                    <a href="{res.get('wpscan_link')}" target="_blank">WPScan</a>
-                    <a href="{res.get('cve_search_link')}" target="_blank">CVE</a>
-                    <a href="{res.get('patchstack_link')}" target="_blank">Patchstack</a>
-                    <a href="{res.get('download_link')}" target="_blank">Download</a>
+                    <a href="{res.get("wpscan_link")}" target="_blank">WPScan</a>
+                    <a href="{res.get("cve_search_link")}" target="_blank">CVE</a>
+                    <a href="{res.get("patchstack_link")}" target="_blank">Patchstack</a>
+                    <a href="{res.get("wp_org_link", res.get("download_link"))}" target="_blank">WP.org</a>
                 </td>
             </tr>"""
 
@@ -214,10 +222,7 @@ def generate_html_report(results: List[Dict[str, Any]]) -> str:
 
 
 def save_results(
-    results: List[Dict[str, Any]], 
-    filename: str, 
-    format_type: str,
-    verbose: bool = True
+    results: List[Dict[str, Any]], filename: str, format_type: str, verbose: bool = True
 ) -> bool:
     """Saves the collected results to a file."""
     if not results:
@@ -226,20 +231,20 @@ def save_results(
         return False
 
     try:
-        with open(filename, 'w', encoding='utf-8', newline='') as f:
-            if format_type == 'json':
+        with open(filename, "w", encoding="utf-8", newline="") as f:
+            if format_type == "json":
                 json.dump(results, f, indent=4)
-            
-            elif format_type == 'csv':
+
+            elif format_type == "csv":
                 writer = csv.writer(f)
                 headers = list(results[0].keys())
                 writer.writerow(headers)
                 for res in results:
-                    writer.writerow([res.get(h, '') for h in headers])
-            
-            elif format_type == 'html':
+                    writer.writerow([res.get(h, "") for h in headers])
+
+            elif format_type == "html":
                 f.write(generate_html_report(results))
-        
+
         if verbose:
             print(f"{Colors.GREEN}[+] Results saved to {filename}{Colors.RESET}")
         return True

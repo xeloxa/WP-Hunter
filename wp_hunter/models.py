@@ -12,6 +12,7 @@ from enum import Enum
 
 class ScanStatus(Enum):
     """Scan session status."""
+
     PENDING = "pending"
     RUNNING = "running"
     COMPLETED = "completed"
@@ -22,6 +23,7 @@ class ScanStatus(Enum):
 @dataclass
 class CodeAnalysisResult:
     """Code analysis result for plugins/themes."""
+
     dangerous_functions: List[str] = field(default_factory=list)
     ajax_endpoints: List[str] = field(default_factory=list)
     theme_functions: List[str] = field(default_factory=list)
@@ -34,28 +36,28 @@ class CodeAnalysisResult:
 @dataclass
 class ScanConfig:
     """Scan configuration parameters."""
+
     # Basic scanning options
     pages: int = 5
     limit: int = 0
     min_installs: int = 1000
     max_installs: int = 0
     sort: str = "updated"  # new, updated, popular
-    
+
     # Filter flags
     smart: bool = False
     abandoned: bool = False
     user_facing: bool = False
     themes: bool = False
-    
+
     # Time filtering
     min_days: int = 0
     max_days: int = 0
-    
-    # Deep analysis
-    deep_analysis: bool = False
+
+    # Analysis flags
     ajax_scan: bool = False
     dangerous_functions: bool = False
-    
+
     # Aggressive mode
     aggressive: bool = False
 
@@ -82,7 +84,6 @@ class ScanConfig:
             "themes": self.themes,
             "min_days": self.min_days,
             "max_days": self.max_days,
-            "deep_analysis": self.deep_analysis,
             "ajax_scan": self.ajax_scan,
             "dangerous_functions": self.dangerous_functions,
             "aggressive": self.aggressive,
@@ -108,21 +109,25 @@ class ScanConfig:
             themes=data.get("themes", False),
             min_days=data.get("min_days", data.get("min-days", 0)),
             max_days=data.get("max_days", data.get("max-days", 0)),
-            deep_analysis=data.get("deep_analysis", data.get("deep-analysis", False)),
             ajax_scan=data.get("ajax_scan", data.get("ajax-scan", False)),
-            dangerous_functions=data.get("dangerous_functions", data.get("dangerous-functions", False)),
+            dangerous_functions=data.get(
+                "dangerous_functions", data.get("dangerous-functions", False)
+            ),
             aggressive=data.get("aggressive", False),
             min_score=data.get("min_score", 0),
             output=data.get("output"),
             format=data.get("format", "json"),
             download=data.get("download", 0),
-            auto_download_risky=data.get("auto_download_risky", data.get("auto-download-risky", 0)),
+            auto_download_risky=data.get(
+                "auto_download_risky", data.get("auto-download-risky", 0)
+            ),
         )
 
 
 @dataclass
 class ScanSession:
     """A scan session for persistence."""
+
     id: Optional[int] = None
     created_at: datetime = field(default_factory=datetime.now)
     status: ScanStatus = ScanStatus.PENDING
@@ -147,31 +152,34 @@ class ScanSession:
 @dataclass
 class PluginResult:
     """Structured result for a scanned plugin."""
+
     # Basic info
     name: str
     slug: str
     version: str
-    
+
     # Scores & metrics
     score: int = 0
     installations: int = 0
     days_since_update: int = 0
     tested_wp_version: str = "?"
-    
+
     # Flags
     author_trusted: bool = False
     is_risky_category: bool = False
     is_user_facing: bool = False
     is_duplicate: bool = False
-    
+    is_theme: bool = False
+
     # Analysis data
     risk_tags: List[str] = field(default_factory=list)
     security_flags: List[str] = field(default_factory=list)
     feature_flags: List[str] = field(default_factory=list)
     code_analysis: Optional[CodeAnalysisResult] = None
-    
+
     # Links
     download_link: str = ""
+    wp_org_link: str = ""
     cve_search_link: str = ""
     wpscan_link: str = ""
     patchstack_link: str = ""
@@ -193,10 +201,12 @@ class PluginResult:
             "is_risky_category": self.is_risky_category,
             "is_user_facing": self.is_user_facing,
             "is_duplicate": self.is_duplicate,
+            "is_theme": self.is_theme,
             "risk_tags": self.risk_tags,
             "security_flags": self.security_flags,
             "feature_flags": self.feature_flags,
             "download_link": self.download_link,
+            "wp_org_link": self.wp_org_link,
             "cve_search_link": self.cve_search_link,
             "wpscan_link": self.wpscan_link,
             "patchstack_link": self.patchstack_link,
@@ -204,7 +214,7 @@ class PluginResult:
             "google_dork_link": self.google_dork_link,
             "trac_link": self.trac_link,
         }
-        
+
         if self.code_analysis:
             result["code_analysis"] = {
                 "dangerous_functions": self.code_analysis.dangerous_functions,
@@ -214,5 +224,5 @@ class PluginResult:
                 "nonce_usage": self.code_analysis.nonce_usage,
                 "sanitization_issues": self.code_analysis.sanitization_issues,
             }
-        
+
         return result

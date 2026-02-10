@@ -4,7 +4,6 @@ WP-Hunter SVN Downloader
 Download WordPress plugins from SVN repository.
 """
 
-import os
 import shutil
 import subprocess
 import threading
@@ -200,19 +199,19 @@ class SVNDownloader:
                 executor.submit(self.download_plugin, slug, version, force): slug
                 for slug in slugs
             }
-            
+
             for future in as_completed(future_to_slug):
                 if self.stop_event.is_set():
                     executor.shutdown(wait=False, cancel_futures=True)
                     break
-                
+
                 slug = future_to_slug[future]
                 completed += 1
-                
+
                 try:
                     result = future.result()
                     results.append(result)
-                    
+
                     if verbose:
                         if result.success:
                             status = f"{Colors.GREEN}✓{Colors.RESET}"
@@ -220,14 +219,14 @@ class SVNDownloader:
                                 status = f"{Colors.YELLOW}≡{Colors.RESET}"
                         else:
                             status = f"{Colors.RED}✗{Colors.RESET}"
-                        
+
                         print(f"  [{completed}/{len(slugs)}] {status} {slug}")
                         if not result.success and result.error:
                             print(f"           └─ {Colors.GRAY}{result.error}{Colors.RESET}")
-                    
+
                     if self.on_progress:
                         self.on_progress(slug, result.success)
-                        
+
                 except Exception as e:
                     results.append(SVNDownloadResult(
                         slug=slug,

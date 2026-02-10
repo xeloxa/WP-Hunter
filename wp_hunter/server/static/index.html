@@ -217,6 +217,31 @@
             border-bottom: 1px dashed #222;
         }
         .code-item:last-child { border-bottom: none; }
+
+        /* Bulk Scan Animations */
+        @keyframes shimmer {
+            0% { transform: translateX(-100%); }
+            100% { transform: translateX(100%); }
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.4; }
+        }
+        .scan-pulse {
+            animation: pulse 1.5s ease-in-out infinite;
+        }
+        .scan-pulse.paused {
+            animation: none;
+            background: #ffbd2e !important;
+        }
+        .scan-pulse.completed {
+            animation: none;
+            background: var(--accent-primary) !important;
+        }
     </style>
 </head>
 <body>
@@ -413,64 +438,10 @@
                                 <div class="toggle-switch"></div>
                             </label>
                         </div>
-
-                        <div class="control-group">
-                            <label>Deep Analysis <span class="info-icon" data-tooltip="Perform deeper static analysis on code structure (slower)."></span></label>
-                            <label class="toggle-card danger">
-                                <input type="checkbox" name="deep_analysis">
-                                <div class="toggle-content">
-                                    <span class="toggle-title">Deep Analysis</span>
-                                    <span class="toggle-desc"> intensive code scanning</span>
-                                </div>
-                                <div class="toggle-switch"></div>
-                            </label>
-                        </div>
                     </div>
                 </section>
 
-                <!-- Section 3: Output -->
-                <section class="panel">
-                    <div class="panel-header">
-                        <span class="panel-icon">03</span>
-                        <h2>Output & Artifacts</h2>
-                    </div>
-                    <div class="panel-body grid-2">
-                        <div class="control-group">
-                            <label>Report File <span class="info-icon" data-tooltip="Save the scan results to a local file (e.g. 'report.json')."></span></label>
-                            <div class="input-wrapper">
-                                <input type="text" name="output" placeholder="e.g. results.json">
-                            </div>
-                        </div>
-
-                        <div class="control-group">
-                            <label>Report Format <span class="info-icon" data-tooltip="Select the format for the output file."></span></label>
-                            <div class="select-wrapper">
-                                <select name="format">
-                                    <option value="json" selected>JSON</option>
-                                    <option value="csv">CSV</option>
-                                    <option value="html">HTML Report</option>
-                                </select>
-                            </div>
-                        </div>
-
-                        <div class="control-group">
-                            <label>Auto Download Strategy <span class="info-icon" data-tooltip="Choose which plugins to automatically download based on score and risk."></span></label>
-                            <div class="range-inputs">
-                                <div class="select-wrapper" style="flex: 2;">
-                                    <select name="download_mode">
-                                        <option value="none">No Download</option>
-                                        <option value="all">Top Scored (All)</option>
-                                        <option value="risky">High Risk Only</option>
-                                    </select>
-                                </div>
-                                <div class="input-wrapper" style="flex: 1;">
-                                    <input type="number" name="download_qty" placeholder="Qty" min="0">
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </section>
-
+                <!-- Section 3: Output & Artifacts REMOVED -->
             </form>
         </main>
 
@@ -522,9 +493,64 @@
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>
                             BACK
                         </button>
+                        <button class="action-btn" onclick="runBulkSemgrep(currentScanId)" id="btn-bulk-scan" style="background: rgba(0, 243, 255, 0.1); border: 1px solid var(--accent-blue); color: var(--accent-blue);">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>
+                            SCAN ALL (SEMGREP)
+                        </button>
+                        <button class="action-btn" onclick="stopBulkSemgrep(currentScanId)" id="btn-bulk-stop" style="display: none; background: rgba(255, 0, 85, 0.1); border: 1px solid #ff0055; color: #ff0055;">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="6" width="12" height="12"></rect></svg>
+                            STOP SCAN
+                        </button>
+                        <button class="action-btn" onclick="downloadScanJSON(currentScanId)">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                            JSON
+                        </button>
                     </div>
                 </div>
                 <div class="panel-body">
+                    <div id="bulk-dashboard" style="display: none; margin-bottom: 25px; padding: 20px; border: 1px solid var(--border-color); background: var(--bg-panel); border-radius: 4px;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                            <div style="display: flex; align-items: center; gap: 10px;">
+                                <div id="bulk-status-dot" class="scan-pulse" style="width: 8px; height: 8px; border-radius: 50%; background: var(--accent-blue);"></div>
+                                <h3 style="font-family: var(--font-mono); font-size: 11px; color: var(--text-muted); margin: 0; letter-spacing: 1px;">SEMGREP ANALYSIS</h3>
+                            </div>
+                            <span id="bulk-status" style="font-family: var(--font-mono); font-size: 10px; color: var(--accent-blue); padding: 3px 8px; border: 1px solid rgba(0, 243, 255, 0.2); border-radius: 2px;">READY</span>
+                        </div>
+
+                        <!-- Simplified Progress Bar -->
+                        <div style="background: #000; height: 4px; border-radius: 2px; overflow: hidden; margin-bottom: 20px; position: relative;">
+                            <div id="bulk-progress-bar" style="width: 0%; height: 100%; background: var(--accent-blue); transition: width 0.3s ease;"></div>
+                        </div>
+
+                        <!-- Stats Grid -->
+                        <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 1px; background: var(--border-color); border: 1px solid var(--border-color); border-radius: 2px; overflow: hidden;">
+                            <div style="background: var(--bg-panel); padding: 15px;">
+                                <div style="font-size: 9px; color: var(--text-muted); margin-bottom: 5px; font-family: var(--font-mono);">PROGRESS</div>
+                                <div style="font-size: 16px; color: #fff; font-family: var(--font-mono);"><span id="bulk-scanned">0</span><span style="color: #444; font-size: 12px;"> / <span id="bulk-total">0</span></span></div>
+                            </div>
+                            <div style="background: var(--bg-panel); padding: 15px;">
+                                <div style="font-size: 9px; color: var(--text-muted); margin-bottom: 5px; font-family: var(--font-mono);">FINDINGS</div>
+                                <div style="font-size: 16px; color: var(--accent-blue); font-family: var(--font-mono);" id="bulk-issues">0</div>
+                            </div>
+                            <div style="background: var(--bg-panel); padding: 15px;">
+                                <div style="font-size: 9px; color: #ff5f56; margin-bottom: 5px; font-family: var(--font-mono);">ERRORS</div>
+                                <div style="font-size: 16px; color: #ff5f56; font-family: var(--font-mono);" id="bulk-error-count">0</div>
+                            </div>
+                            <div style="background: var(--bg-panel); padding: 15px;">
+                                <div style="font-size: 9px; color: #ffbd2e; margin-bottom: 5px; font-family: var(--font-mono);">WARNINGS</div>
+                                <div style="font-size: 16px; color: #ffbd2e; font-family: var(--font-mono);" id="bulk-warn-count">0</div>
+                            </div>
+                        </div>
+
+                        <!-- Current Plugin Indicator -->
+                        <div id="bulk-current-plugin" style="margin-top: 15px; padding: 10px; background: #0a0a0a; border-radius: 4px; border: 1px solid #222; display: none;">
+                            <div style="display: flex; align-items: center; gap: 10px;">
+                                <div class="spinner" style="width: 14px; height: 14px; border: 2px solid #333; border-top-color: var(--accent-blue); border-radius: 50%; animation: spin 1s linear infinite;"></div>
+                                <span style="font-size: 11px; color: #888; font-family: var(--font-mono);">Analyzing: <span id="bulk-current-slug" style="color: var(--accent-blue);"></span></span>
+                            </div>
+                        </div>
+                    </div>
+
                     <div class="details-grid" id="details-summary">
                         <!-- Summary injected here -->
                     </div>
@@ -718,7 +744,7 @@
 
                     <!-- Current Rules List -->
                     <div>
-                        <div id="semgrep-rules-list" style="max-height: 400px; overflow-y: auto;">
+                        <div id="semgrep-rules-list">
                             <!-- Rules will be injected here -->
                         </div>
                     </div>
@@ -770,6 +796,25 @@
         </aside>
     </div>
 
+    <!-- Custom Toast/Alert Container -->
+    <div id="toast-container" style="position: fixed; top: 20px; right: 20px; z-index: 9999; display: flex; flex-direction: column; gap: 10px;"></div>
+
+    <!-- Confirmation Modal -->
+    <div class="modal-overlay" id="confirm-modal" style="z-index: 2000;">
+        <div class="modal" style="max-width: 400px; height: auto;">
+            <div class="modal-header" style="padding: 15px 20px;">
+                <h3 style="font-size: 14px; color: var(--accent-primary);">CONFIRM ACTION</h3>
+            </div>
+            <div class="modal-body" style="padding: 20px; text-align: center;">
+                <p id="confirm-message" style="margin-bottom: 25px; color: #ccc; font-size: 13px; line-height: 1.5;"></p>
+                <div style="display: flex; justify-content: center; gap: 10px;">
+                    <button id="btn-confirm-cancel" class="action-btn" style="width: auto; padding: 8px 20px; background: transparent; border: 1px solid #333; color: #888;">CANCEL</button>
+                    <button id="btn-confirm-yes" class="action-btn" style="width: auto; padding: 8px 20px; background: var(--accent-primary); color: #000; font-weight: bold;">PROCEED</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Details Modal -->
     <div class="modal-overlay" id="plugin-modal">
         <div class="modal">
@@ -783,6 +828,6 @@
         </div>
     </div>
 
-    <script src="assets/js/app.js?v=2"></script>
+    <script src="assets/js/app.js?v=6"></script>
 </body>
 </html>

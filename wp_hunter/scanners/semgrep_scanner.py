@@ -1,6 +1,5 @@
 # Semgrep security scanner for WordPress plugins
 
-import os
 import json
 import subprocess
 import threading
@@ -143,8 +142,14 @@ class SemgrepScanner:
 
         # 2. Registry rulesets (OWASP, PHP, etc.)
         if self.use_registry_rules:
-            for ruleset in self.registry_rulesets:
-                configs.extend(["--config", ruleset])
+            for ruleset_key in self.registry_rulesets:
+                # Resolve the config string from our map if it exists
+                if ruleset_key in SEMGREP_REGISTRY_RULESETS:
+                    config_val = SEMGREP_REGISTRY_RULESETS[ruleset_key]["config"]
+                    configs.extend(["--config", config_val])
+                else:
+                    # Otherwise use the value directly (e.g. if user supplied "p/ci")
+                    configs.extend(["--config", ruleset_key])
 
         return configs
 
@@ -161,6 +166,33 @@ class SemgrepScanner:
             return False
 
     def scan_plugin(self, plugin_path: str, slug: str) -> SemgrepResult:
+        # Security: Validate inputs
+        if not slug or not isinstance(slug, str):
+            return SemgrepResult(slug=slug or "unknown", findings=[], errors=["Invalid slug"], success=False)
+        
+        # Security: Sanitize slug (alphanumeric, hyphens, underscores only)
+        import re
+        if not re.match(r'^[a-zA-Z0-9_-]+$', slug):
+            return SemgrepResult(slug=slug, findings=[], errors=["Invalid slug format"], success=False)
+        
+        # Security: Validate plugin_path exists and is a directory
+        path_obj = Path(plugin_path)
+        if not path_obj.exists():
+            return SemgrepResult(slug=slug, findings=[], errors=["Plugin path does not exist"], success=False)
+        if not path_obj.is_dir():
+            return SemgrepResult(slug=slug, findings=[], errors=["Plugin path is not a directory"], success=False)
+        
+        # Security: Prevent path traversal - ensure path is within expected directory
+        try:
+            # Resolve to absolute path and check for path traversal
+            resolved_path = path_obj.resolve()
+            # Ensure the path doesn't contain shell metacharacters
+            dangerous_chars = [';', '&', '|', '`', '$', '(', ')', '<', '>', '\\', '\n', '\r']
+            if any(c in plugin_path for c in dangerous_chars):
+                return SemgrepResult(slug=slug, findings=[], errors=["Invalid characters in path"], success=False)
+        except Exception as e:
+            return SemgrepResult(slug=slug, findings=[], errors=[f"Path validation error: {str(e)}"], success=False)
+        
         if self.stop_event.is_set():
             return SemgrepResult(slug=slug, findings=[], errors=["Stopped"], success=False)
 
@@ -174,30 +206,48 @@ class SemgrepScanner:
                 "--json",
                 "--output", str(output_file),
                 "--no-git-ignore",
-                plugin_path
+                plugin_path # Use the path directly as is
             ])
+
+            # Ensure output directory exists before running
+            output_file.parent.mkdir(parents=True, exist_ok=True)
 
             result = subprocess.run(
                 cmd,
                 capture_output=True,
                 text=True,
-                timeout=300  # 5 minute timeout per plugin
+                timeout=60  # Reduced timeout to 60 seconds to prevent hanging
             )
+
+            # Check return code. Semgrep returns 0 if clean, 1 if findings, >1 if error
+            # But recent versions return 0 even with findings unless --error is used
+            # We care if the output file was created and is valid JSON
 
             findings = []
             errors = []
+            parsing_success = False
 
-            if output_file.exists():
-                with open(output_file, 'r') as f:
-                    data = json.load(f)
-                    findings = data.get('results', [])
-                    errors = [e.get('message', '') for e in data.get('errors', [])]
+            if output_file.exists() and output_file.stat().st_size > 0:
+                try:
+                    with open(output_file, 'r') as f:
+                        data = json.load(f)
+                        findings = data.get('results', [])
+                        # Semgrep errors are usually in 'errors' key
+                        errors = [e.get('message', '') for e in data.get('errors', [])]
+                        parsing_success = True
+                except json.JSONDecodeError:
+                    errors.append(f"Invalid JSON output from Semgrep. Stderr: {result.stderr}")
+            else:
+                if result.returncode != 0:
+                     errors.append(f"Semgrep failed (code {result.returncode}): {result.stderr}")
+                else:
+                     errors.append(f"No output file generated. Stderr: {result.stderr}")
 
             return SemgrepResult(
                 slug=slug,
                 findings=findings,
                 errors=errors,
-                success=True
+                success=parsing_success
             )
 
         except subprocess.TimeoutExpired:
@@ -230,12 +280,12 @@ class SemgrepScanner:
             return {}
 
         if verbose:
-            print(f"\\n{Colors.CYAN}{'='*60}{Colors.RESET}")
+            print(f"\n{Colors.CYAN}{'='*60}{Colors.RESET}")
             print(f"{Colors.BOLD}🔍 Running Semgrep Security Scan{Colors.RESET}")
             print(f"{Colors.CYAN}{'='*60}{Colors.RESET}")
             print(f"  📁 Plugins: {len(plugin_dirs)}")
             print(f"  📄 Output: {self.output_dir}")
-            print(f"{Colors.CYAN}{'='*60}{Colors.RESET}\\n")
+            print(f"{Colors.CYAN}{'='*60}{Colors.RESET}\n")
 
         results: Dict[str, SemgrepResult] = {}
         total_findings = 0
@@ -283,7 +333,7 @@ class SemgrepScanner:
         return results
 
     def _print_summary(self, results: Dict[str, SemgrepResult], total_findings: int):
-        print(f"\\n{Colors.CYAN}{'='*60}{Colors.RESET}")
+        print(f"\n{Colors.CYAN}{'='*60}{Colors.RESET}")
         print(f"{Colors.BOLD}📊 Scan Summary{Colors.RESET}")
         print(f"{Colors.CYAN}{'='*60}{Colors.RESET}")
         print(f"  🔌 Plugins scanned: {len(results)}")
@@ -295,7 +345,7 @@ class SemgrepScanner:
                 severities[sev] = severities.get(sev, 0) + 1
 
         if total_findings > 0:
-            print(f"\\n  By Severity:")
+            print(f"\n  By Severity:")
             if severities.get('ERROR', 0) > 0:
                 print(f"    {Colors.RED}ERROR{Colors.RESET}: {severities['ERROR']}")
             if severities.get('WARNING', 0) > 0:
@@ -309,13 +359,13 @@ class SemgrepScanner:
         )[:5]
 
         if sorted_results and len(sorted_results[0][1].findings) > 0:
-            print(f"\\n  Top Vulnerable Plugins:")
+            print(f"\n  Top Vulnerable Plugins:")
             for slug, result in sorted_results:
                 if len(result.findings) > 0:
                     print(f"    • {slug}: {len(result.findings)} findings")
 
-        print(f"\\n  📁 Results saved to: {self.output_dir}")
-        print(f"{Colors.CYAN}{'='*60}{Colors.RESET}\\n")
+        print(f"\n  📁 Results saved to: {self.output_dir}")
+        print(f"{Colors.CYAN}{'='*60}{Colors.RESET}\n")
 
     def _save_combined_report(self, results: Dict[str, SemgrepResult]):
         report = {

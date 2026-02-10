@@ -187,3 +187,4 @@ Plugins/
 .DS_Store.agents/
 wphunter.db
 .DS_Store
+semgrep_results/
