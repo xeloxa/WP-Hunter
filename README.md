@@ -191,3 +191,13 @@ The score (0-100) reflects the likelihood of **unpatched** or **unknown** vulner
 ## ⚖️ Legal Disclaimer
 
 This tool is designed for **security research and authorized reconnaissance** purposes only. It is intended to assist security professionals and developers in assessing attack surfaces and evaluating plugin health. The authors are not responsible for any misuse. Always ensure you have appropriate authorization before performing any security-related activities.
+
+---
+
+<a href="https://www.star-history.com/#xeloxa/wp-hunter&type=date&legend=top-left">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=xeloxa/wp-hunter&type=date&theme=dark&legend=top-left" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=xeloxa/wp-hunter&type=date&legend=top-left" />
+   <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=xeloxa/wp-hunter&type=date&legend=top-left" />
+ </picture>
+</a>
