@@ -6,6 +6,7 @@ import asyncio
 import json
 import logging
 import re
+import shutil
 import subprocess
 from pathlib import Path
 from typing import Dict, List, Optional, Any
@@ -17,6 +18,7 @@ from wp_hunter.server.schemas import DownloadRequest, SemgrepRuleRequest
 from wp_hunter.database.repository import ScanRepository
 from wp_hunter.downloaders.plugin_downloader import PluginDownloader
 from wp_hunter.scanners.semgrep_scanner import (
+    DEFAULT_ENABLED_RULESETS,
     SemgrepScanner,
     SEMGREP_REGISTRY_RULESETS,
     SEMGREP_COMMUNITY_SOURCES,
@@ -32,8 +34,19 @@ active_bulk_scans: Dict[int, asyncio.Event] = {}
 
 # Paths
 SEM_RESULTS_DIR = Path("./semgrep_results")
+SEM_RESULTS_DIR.mkdir(parents=True, exist_ok=True)
 CUSTOM_RULES_PATH = SEM_RESULTS_DIR / "custom_rules.yaml"
 DISABLED_CONFIG_PATH = SEM_RESULTS_DIR / "disabled_config.json"
+PACKAGE_CUSTOM_RULES_PATH = (
+    Path(__file__).resolve().parents[2] / "semgrep_results" / "custom_rules.yaml"
+)
+
+# Bootstrap default custom rules into runtime directory if missing.
+if not CUSTOM_RULES_PATH.exists() and PACKAGE_CUSTOM_RULES_PATH.exists():
+    try:
+        shutil.copy2(PACKAGE_CUSTOM_RULES_PATH, CUSTOM_RULES_PATH)
+    except Exception:
+        logger.warning("Failed to bootstrap default Semgrep custom rules.")
 
 
 def get_disabled_config() -> Dict[str, List[str]]:
@@ -57,6 +70,12 @@ def save_disabled_config(config: Dict[str, List[str]]):
     DISABLED_CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
     with open(DISABLED_CONFIG_PATH, "w") as f:
         json.dump(config, f)
+
+
+def get_active_rulesets() -> List[str]:
+    """Return the registry rulesets that are not disabled globally."""
+    disabled = set(get_disabled_config().get("rulesets", []))
+    return [rs for rs in DEFAULT_ENABLED_RULESETS if rs not in disabled]
 
 
 async def run_plugin_semgrep_scan(
@@ -91,7 +110,28 @@ async def run_plugin_semgrep_scan(
 
         # 2. Run Semgrep
         output_dir = SEM_RESULTS_DIR / f"{slug}_{scan_id}"
-        scanner = SemgrepScanner(output_dir=str(output_dir), use_registry_rules=True)
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        # Deploy custom configuration per scan so Semgrep can pick it up
+        if CUSTOM_RULES_PATH.exists():
+            try:
+                shutil.copy2(CUSTOM_RULES_PATH, output_dir / "custom_rules.yaml")
+            except Exception:
+                logger.warning("Failed to copy custom Semgrep rules into scan directory.")
+
+        disabled_rules = get_disabled_config().get("rules", [])
+        if disabled_rules:
+            try:
+                with open(output_dir / "disabled_rules.json", "w") as f:
+                    json.dump(disabled_rules, f)
+            except Exception:
+                logger.warning("Failed to write disabled rules for Semgrep scan.")
+
+        scanner = SemgrepScanner(
+            output_dir=str(output_dir),
+            use_registry_rules=True,
+            registry_rulesets=get_active_rulesets(),
+        )
 
         # Start scan in thread to avoid blocking the event loop
         result = await loop.run_in_executor(

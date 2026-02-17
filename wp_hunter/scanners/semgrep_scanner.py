@@ -95,16 +95,36 @@ class SemgrepScanner:
 
     def _filter_custom_rules(self) -> Optional[str]:
         """Create a temporary custom rules file with disabled rules removed."""
-        custom_file = self.output_dir / "custom_rules.yaml"
-        if not custom_file.exists():
+        custom_candidates = [
+            self.output_dir / "custom_rules.yaml",
+            Path("./semgrep_results/custom_rules.yaml"),
+            Path(__file__).resolve().parents[1] / "semgrep_results" / "custom_rules.yaml",
+        ]
+        custom_file = next((p for p in custom_candidates if p.exists()), None)
+        if not custom_file:
             return None
 
-        disabled_file = self.output_dir / "disabled_rules.json"
-        disabled_ids = []
-        if disabled_file.exists():
+        disabled_ids = set()
+
+        # Legacy per-output disabled rules format: ["rule-id", ...]
+        legacy_disabled_file = self.output_dir / "disabled_rules.json"
+        if legacy_disabled_file.exists():
             try:
-                with open(disabled_file, 'r') as f:
-                    disabled_ids = json.load(f)
+                with open(legacy_disabled_file, 'r') as f:
+                    loaded = json.load(f)
+                    if isinstance(loaded, list):
+                        disabled_ids.update(loaded)
+            except Exception:
+                pass
+
+        # Current shared UI format: {"rules": [...], "rulesets": [...]}
+        shared_disabled_file = Path("./semgrep_results/disabled_config.json")
+        if shared_disabled_file.exists():
+            try:
+                with open(shared_disabled_file, 'r') as f:
+                    loaded = json.load(f)
+                    if isinstance(loaded, dict):
+                        disabled_ids.update(loaded.get("rules", []))
             except Exception:
                 pass
 
