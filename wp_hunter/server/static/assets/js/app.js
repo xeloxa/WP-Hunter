@@ -341,7 +341,7 @@ function startSystemStatusPolling() {
     if (systemStatusTimer) {
         clearInterval(systemStatusTimer);
     }
-    loadSystemStatus(true);
+    loadSystemStatus();
     systemStatusTimer = setInterval(() => loadSystemStatus(), SYSTEM_STATUS_POLL_INTERVAL);
 }
 

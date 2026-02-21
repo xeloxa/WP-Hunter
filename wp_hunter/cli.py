@@ -5,6 +5,7 @@ Command-line interface and main entry point.
 """
 
 import argparse
+import logging
 import webbrowser
 import threading
 import time
@@ -122,6 +123,16 @@ def get_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--port", type=int, default=8080, help="Port for web dashboard (default: 8080)"
+    )
+    parser.add_argument(
+        "--check-update",
+        action="store_true",
+        help="Check for a newer WP-Hunter release and exit",
+    )
+    parser.add_argument(
+        "--update",
+        action="store_true",
+        help="Download and install the latest WP-Hunter release, then exit",
     )
 
     # Database sync options
@@ -341,12 +352,113 @@ def run_gui(port: int = 8080) -> None:
     uvicorn.run(app, host="127.0.0.1", port=port, log_level="warning")
 
 
+def _format_release_label(status_payload: dict) -> str:
+    latest = status_payload.get("latest_version")
+    if latest:
+        return str(latest)
+    return "unknown"
+
+
+def run_check_update(update_manager_module) -> None:
+    """Check release status once and exit."""
+    try:
+        status_payload = update_manager_module.manager.get_status(force=True)
+    except Exception as exc:
+        print(f"{Colors.RED}[!] Update check failed: {exc}{Colors.RESET}")
+        return
+
+    latest_label = _format_release_label(status_payload)
+    current_label = status_payload.get("current_version") or "unknown"
+    if status_payload.get("update_available"):
+        print(
+            f"{Colors.YELLOW}[!] Update available: {latest_label} (current: {current_label}){Colors.RESET}"
+        )
+    else:
+        print(f"{Colors.GREEN}[✓] You are up to date ({current_label}).{Colors.RESET}")
+
+
+def run_update(update_manager_module) -> None:
+    """Trigger update flow and wait until completion."""
+    try:
+        status_payload = update_manager_module.manager.get_status(force=True)
+    except Exception as exc:
+        print(f"{Colors.RED}[!] Update check failed: {exc}{Colors.RESET}")
+        return
+
+    if not status_payload.get("update_available"):
+        current_label = status_payload.get("current_version") or "unknown"
+        print(f"{Colors.GREEN}[✓] Already up to date ({current_label}).{Colors.RESET}")
+        return
+
+    latest_label = _format_release_label(status_payload)
+    print(f"{Colors.CYAN}[*] Starting update to {latest_label}...{Colors.RESET}")
+    try:
+        start_message = update_manager_module.manager.start_update()
+        print(f"{Colors.GRAY}{start_message}{Colors.RESET}")
+    except Exception as exc:
+        print(f"{Colors.RED}[!] Could not start update: {exc}{Colors.RESET}")
+        return
+
+    last_progress = None
+    while True:
+        status_payload = update_manager_module.manager.get_status(force=False)
+        progress_message = status_payload.get("progress_message")
+        if progress_message and progress_message != last_progress:
+            print(f"{Colors.GRAY}... {progress_message}{Colors.RESET}")
+            last_progress = progress_message
+
+        if not status_payload.get("in_progress"):
+            break
+
+        time.sleep(1)
+
+    if status_payload.get("last_error"):
+        print(f"{Colors.RED}[!] Update failed: {status_payload.get('last_error')}{Colors.RESET}")
+        return
+
+    done_message = status_payload.get("last_update_message") or "Update complete."
+    print(f"{Colors.GREEN}[✓] {done_message}{Colors.RESET}")
+
+
 def main() -> None:
     """Main entry point."""
     print_banner()
     args = get_args()
 
     try:
+        update_manager = None
+        startup_update_status = None
+        try:
+            from wp_hunter.server import update_manager as server_update_manager
+            update_manager = server_update_manager
+            startup_update_status = update_manager.manager.get_status(force=False)
+        except Exception:
+            logging.getLogger("wp_hunter.update").warning("CLI startup release warmup failed.", exc_info=True)
+
+        if args.check_update:
+            if not update_manager:
+                print(f"{Colors.RED}[!] Update subsystem is not available.{Colors.RESET}")
+                return
+            run_check_update(update_manager)
+            return
+
+        if args.update:
+            if not update_manager:
+                print(f"{Colors.RED}[!] Update subsystem is not available.{Colors.RESET}")
+                return
+            run_update(update_manager)
+            return
+
+        if startup_update_status and startup_update_status.get("update_available"):
+            latest_label = _format_release_label(startup_update_status)
+            current_label = startup_update_status.get("current_version") or "unknown"
+            print(
+                f"{Colors.YELLOW}[!] Update available: {latest_label} (current: {current_label}).{Colors.RESET}"
+            )
+            print(
+                f"{Colors.CYAN}[*] Run this command with --update to install the latest release.{Colors.RESET}"
+            )
+
         # GUI mode
         if args.gui:
             run_gui(args.port)

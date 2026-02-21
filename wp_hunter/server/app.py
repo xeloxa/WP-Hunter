@@ -71,6 +71,11 @@ def create_app() -> FastAPI:
         allowed_hosts=["localhost", "127.0.0.1"]
     )
 
+    try:
+        update_manager.manager.get_status(force=False)
+    except Exception:
+        logger.warning("Startup release warmup failed.", exc_info=True)
+
     # Include Routers
     app.include_router(scans.router)
     app.include_router(semgrep.router)

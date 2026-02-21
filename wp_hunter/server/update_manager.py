@@ -42,6 +42,7 @@ class UpdateManager:
         self._progress_message: str = ""
         self._last_error: Optional[str] = None
         self._last_update_message: Optional[str] = None
+        self._startup_auto_check_done = False
 
     @property
     def project_root(self) -> Path:
@@ -162,6 +163,21 @@ class UpdateManager:
             "update_available": self._is_newer_release(data.get("tag_name")),
         }
 
+    def _empty_release_payload(self) -> Dict:
+        return {
+            "tag_name": None,
+            "name": None,
+            "body": "",
+            "published_at": None,
+            "html_url": None,
+            "zipball_url": None,
+            "asset_name": None,
+            "asset_size": None,
+            "asset_url": None,
+            "download_url": None,
+            "update_available": False,
+        }
+
     def _choose_asset(self, assets: list, fallback_url: Optional[str]) -> Dict:
         if assets:
             preferred = next((a for a in assets if str(a.get("name", "")).lower().endswith(".zip")), None)
@@ -254,15 +270,31 @@ class UpdateManager:
 
     def get_status(self, force: bool = False) -> Dict:
         release = None
-        try:
-            release = self._fetch_release(force)
-            self._last_error = None
-        except Exception as exc:
-            self._last_error = f"{type(exc).__name__}: {exc}"
-            logger.warning("Unable to refresh release info: %s", exc)
-            if not self._cache:
-                raise
-            release = self._cache
+        should_fetch = force
+        if not force:
+            with self._lock:
+                if not self._startup_auto_check_done:
+                    self._startup_auto_check_done = True
+                    should_fetch = True
+
+        if should_fetch:
+            try:
+                release = self._fetch_release(force)
+                self._last_error = None
+            except Exception as exc:
+                self._last_error = f"{type(exc).__name__}: {exc}"
+                logger.warning("Unable to refresh release info: %s", exc)
+                with self._lock:
+                    cached_release = self._cache
+                if cached_release:
+                    release = cached_release
+                elif force:
+                    raise
+                else:
+                    release = self._empty_release_payload()
+        else:
+            with self._lock:
+                release = self._cache or self._empty_release_payload()
         with self._lock:
             in_progress = self._in_progress
             progress_message = self._progress_message
