@@ -7,6 +7,7 @@
     --accent-blue: #00f3ff;
     --text-main: #e0e0e0;
     --text-muted: #666;
+    --star-strip-height: 30px;
     
     --font-mono: 'JetBrains Mono', monospace;
     --font-sans: 'Space Grotesk', sans-serif;
@@ -25,6 +26,83 @@ body {
     line-height: 1.5;
     min-height: 100vh;
     overflow-x: hidden;
+}
+
+/* Star ribbon */
+.star-strip {
+    position: sticky;
+    top: 0;
+    z-index: 1200;
+    width: 100%;
+    min-height: var(--star-strip-height);
+    background: rgba(0, 255, 157, 0.06);
+    border-bottom: 1px solid rgba(0, 255, 157, 0.25);
+    backdrop-filter: blur(6px);
+}
+
+.star-strip__inner {
+    max-width: 1600px;
+    width: calc(100% - 60px);
+    margin: 0 auto;
+    min-height: var(--star-strip-height);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 0 0;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: #8ef8cb;
+}
+
+.star-strip__icon {
+    display: inline-block;
+    font-size: 12px;
+    color: var(--accent-primary);
+    line-height: 1;
+}
+
+.star-strip__message {
+    font-size: 11px;
+    letter-spacing: 0.02em;
+    margin: 0;
+    color: #8ef8cb;
+    font-family: var(--font-mono);
+}
+
+.star-strip__action {
+    color: var(--accent-primary);
+    background: transparent;
+    border-radius: 0;
+    padding: 0;
+    font-size: 11px;
+    font-family: var(--font-mono);
+    font-weight: 600;
+    letter-spacing: 0;
+    border: none;
+    text-decoration: none;
+    transition: color 0.2s ease, text-shadow 0.2s ease;
+}
+
+.star-strip__action:hover {
+    color: #a9ffda;
+    text-shadow: 0 0 10px rgba(0, 255, 157, 0.35);
+}
+
+.star-strip__action:focus-visible {
+    outline: 2px solid rgba(0, 255, 157, 0.6);
+    outline-offset: 2px;
+}
+
+@media (max-width: 1100px) {
+    .star-strip__inner {
+        width: calc(100% - 32px);
+        justify-content: flex-start;
+        min-height: auto;
+        padding: 7px 0;
+        flex-wrap: wrap;
+        gap: 5px;
+    }
 }
 
 /* Effects */
