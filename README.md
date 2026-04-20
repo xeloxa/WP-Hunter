@@ -1,3 +1,5 @@
+<h3 align="center">In the name of Allah, the Entirely Merciful, the Especially Merciful </h3>
+
 <p align="center">
   <img src="assets/banner.png" alt="Temodar Agent Banner" width="900" />
 </p>
